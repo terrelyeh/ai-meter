@@ -6,7 +6,10 @@ struct StatusLabel: View {
     var headline: Refresher.Headline
 
     var body: some View {
-        HStack(spacing: 6) {
+        // spacing 設 0：選單列不見得會照 HStack 的 spacing 排，
+        // 所以徽章與數字之間的留白直接畫進圖片裡（見 MenuBarBadge.gap），
+        // 那樣間距才是可控的。
+        HStack(spacing: 0) {
             // 永遠顯示該來源自己的徽章。
             //
             // 之前警戒時會把圖示換成驚嘆號三角形，但那讓「我明明選了 Codex，
@@ -21,6 +24,7 @@ struct StatusLabel: View {
             // 不標出來就等於藏起來。自己這一源的狀態看數字就知道。
             if headline.otherCritical {
                 Image(systemName: "exclamationmark.circle.fill")
+                    .padding(.leading, 4)
             }
         }
     }
@@ -44,6 +48,8 @@ enum MenuBarBadge {
     private static func render(_ headline: Refresher.Headline) -> NSImage {
         // 選單列高度約 22pt，18 是不會被系統縮放又看得清楚的上限附近。
         let side: CGFloat = 18
+        // 徽章右側的留白，直接算進圖裡。
+        let gap: CGFloat = 7
 
         let badge = RoundedRectangle(cornerRadius: 4.5, style: .continuous)
             .fill(headline.brand.color)
@@ -59,6 +65,7 @@ enum MenuBarBadge {
                 RoundedRectangle(cornerRadius: 4.5, style: .continuous)
                     .strokeBorder(Color.white.opacity(0.3), lineWidth: 0.5)
             )
+            .padding(.trailing, gap)
 
         let renderer = ImageRenderer(content: badge)
         renderer.scale = 2                       // 視網膜螢幕不要糊掉

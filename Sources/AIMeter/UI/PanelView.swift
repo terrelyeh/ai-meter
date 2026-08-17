@@ -3,7 +3,7 @@ import SwiftUI
 
 struct PanelView: View {
     @Bindable var refresher: Refresher
-    @Environment(\.openWindow) private var openWindow
+    @State private var launchAtLogin = LoginItem.isInstalled
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -20,41 +20,76 @@ struct PanelView: View {
         .onAppear { refresher.panelDidOpen() }
     }
 
-    /// 面板只留「現在要做的事」：重抓、開設定、關掉。
-    /// 其餘設定都搬到設定視窗——四個控制項塞在這裡已經開始擠了。
+    /// 設定就三項，直接放在面板裡。
+    ///
+    /// 曾經拆成獨立的設定視窗，但這支是 LSUIElement，沒有主選單列，
+    /// 那個視窗得先 NSApp.activate 再 openWindow 才叫得出來——
+    /// 為三個控制項付這個代價、還多一次點擊，不划算。
     private var footer: some View {
-        HStack(spacing: 12) {
-            Button {
-                refresher.refreshNow()
+        VStack(alignment: .leading, spacing: 8) {
+            LabeledContent {
+                Picker("", selection: $refresher.selection) {
+                    ForEach(MenuBarSelection.allCases) { option in
+                        Text(option.title).tag(option)
+                    }
+                }
+                .labelsHidden()
+                .controlSize(.small)
             } label: {
-                Label("重新整理", systemImage: "arrow.clockwise")
-                    .font(.system(size: 11))
+                settingLabel("選單列顯示")
             }
-            .buttonStyle(.borderless)
 
-            Spacer()
-
-            Button {
-                // LSUIElement 的 app 預設不會被帶到前景，不 activate 的話
-                // 視窗會開在別的 app 後面，看起來像沒反應。
-                NSApp.activate(ignoringOtherApps: true)
-                openWindow(id: SettingsWindow.id)
+            LabeledContent {
+                Picker("", selection: $refresher.cadence) {
+                    ForEach(RefreshCadence.allCases) { option in
+                        Text(option.title).tag(option)
+                    }
+                }
+                .labelsHidden()
+                .pickerStyle(.segmented)
+                .controlSize(.small)
             } label: {
-                Image(systemName: "gearshape")
-                    .font(.system(size: 11))
+                settingLabel("更新頻率")
             }
-            .buttonStyle(.borderless)
-            .help("設定")
+            // 說明放在 tooltip 而不是常駐一行字——面板要保持精簡，
+            // 但「省電不會讓你看到過期數字」這件事又值得說明。
+            .help("\(refresher.cadence.detail)。睡眠時一律停止輪詢，打開面板一定會抓最新的。")
 
-            Button {
-                NSApp.terminate(nil)
-            } label: {
-                Image(systemName: "power")
+            HStack(spacing: 10) {
+                Button {
+                    refresher.refreshNow()
+                } label: {
+                    Label("重新整理", systemImage: "arrow.clockwise")
+                        .font(.system(size: 11))
+                }
+                .buttonStyle(.borderless)
+
+                Spacer()
+
+                Toggle("開機啟動", isOn: $launchAtLogin)
+                    .toggleStyle(.checkbox)
                     .font(.system(size: 11))
+                    .onChange(of: launchAtLogin) { _, enabled in
+                        LoginItem.set(enabled: enabled)
+                    }
+
+                Button {
+                    NSApp.terminate(nil)
+                } label: {
+                    Image(systemName: "power")
+                        .font(.system(size: 11))
+                }
+                .buttonStyle(.borderless)
+                .help("結束")
             }
-            .buttonStyle(.borderless)
-            .help("結束")
+            .padding(.top, 2)
         }
+    }
+
+    private func settingLabel(_ text: String) -> some View {
+        Text(text)
+            .font(.system(size: 11))
+            .foregroundStyle(.secondary)
     }
 }
 

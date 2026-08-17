@@ -40,7 +40,7 @@ install: bundle
 	@cp -R "build/$(APP_NAME).app" "$(INSTALL_DIR)/"
 	@open "$(INSTALL_DIR)/$(APP_NAME).app"
 	@echo "裝到 $(INSTALL_DIR)/$(APP_NAME).app"
-	@echo "設定在面板右下角的齒輪裡（開機啟動、更新頻率、選單列顯示）"
+	@echo "設定在面板下方（選單列顯示、更新頻率、開機啟動）"
 
 uninstall:
 	@pkill -x AIMeter 2>/dev/null || true
