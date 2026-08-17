@@ -76,6 +76,16 @@ final class Refresher {
         config = AppConfig.bootstrap()
     }
 
+    /// 桌面面板（貼在桌布上的視窗）。開關會記住，重開 app 自動回來。
+    var desktopPanelVisible: Bool = UserDefaults.standard.bool(forKey: "desktopPanelVisible") {
+        didSet {
+            UserDefaults.standard.set(desktopPanelVisible, forKey: "desktopPanelVisible")
+            desktopPanelVisible ? desktopPanel.show(refresher: self) : desktopPanel.hide()
+        }
+    }
+
+    private let desktopPanel = DesktopPanelWindow()
+
     /// 選單列要顯示誰。改了就記住，重開 app 還在。
     var selection: MenuBarSelection = MenuBarSelection.stored {
         didSet { MenuBarSelection.stored = selection }
@@ -97,6 +107,8 @@ final class Refresher {
     func start() {
         observeSleepWake()
         resume()
+        // 上次關 app 時開著的話，這次也要自己回來。
+        if desktopPanelVisible { desktopPanel.show(refresher: self) }
     }
 
     /// 背景節奏刻意放得很鬆。選單列上的數字只要「大致是對的」就夠用，

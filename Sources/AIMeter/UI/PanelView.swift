@@ -9,7 +9,7 @@ struct PanelView: View {
         VStack(alignment: .leading, spacing: 8) {
             if refresher.boxes.isEmpty {
                 // 全關掉時面板會空無一物，得告訴使用者東西在哪、怎麼開回來。
-                Text("目前沒有啟用任何來源。\n用下方的「顯示項目」把要看的打開。")
+                Text("目前沒有啟用任何來源。\n點下方的齒輪 → 顯示項目，把要看的打開。")
                     .font(.system(size: 11))
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -29,120 +29,131 @@ struct PanelView: View {
         .onAppear { refresher.panelDidOpen() }
     }
 
-    /// 設定就三項，直接放在面板裡。
+    /// 設定全部收進齒輪選單，面板底部只留一列。
     ///
-    /// 曾經拆成獨立的設定視窗，但這支是 LSUIElement，沒有主選單列，
-    /// 那個視窗得先 NSApp.activate 再 openWindow 才叫得出來——
-    /// 為三個控制項付這個代價、還多一次點擊，不划算。
+    /// 五個控制項常駐時，設定區的份量幾乎跟上面四張資料卡一樣重——但這些設定
+    /// 你幾乎不會動。真正值得一直看得到的只有「重新整理」。
+    ///
+    /// 用**選單**而不是獨立視窗：選單就地彈出，不用開視窗、不用 NSApp.activate，
+    /// 也不會多一個要維護的 scene。之前那個設定視窗被拿掉正是因為那些代價。
     private var footer: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            LabeledContent {
-                sourceToggles
+        HStack(spacing: 10) {
+            Button {
+                refresher.refreshNow()
             } label: {
-                settingLabel("顯示項目")
+                Label("重新整理", systemImage: "arrow.clockwise")
+                    .font(.system(size: 11))
+            }
+            .buttonStyle(.borderless)
+
+            Spacer()
+
+            settingsMenu
+
+            Button {
+                NSApp.terminate(nil)
+            } label: {
+                Image(systemName: "power")
+                    .font(.system(size: 11))
+            }
+            .buttonStyle(.borderless)
+            .help("結束")
+        }
+    }
+
+    private var settingsMenu: some View {
+        Menu {
+            // 全部攤平在同一層，用 Section 分組。
+            //
+            // 原本三組是巢狀子選單，但那要「點開齒輪 → 再把滑鼠移到某一項 → 等它展開」，
+            // 多一步而且要停住等 hover。inline 的 Picker 會直接展開成帶勾勾的選項，
+            // 一眼看完、一次點到。選單變長，但長選單比多一層互動好。
+            Section("顯示項目") {
+                ForEach(SourceKind.allCases) { kind in
+                    Toggle(kind.title, isOn: Binding(
+                        get: { refresher.isEnabled(kind) },
+                        set: { refresher.setEnabled($0, for: kind) }
+                    ))
+                }
             }
 
-            LabeledContent {
+            Section("選單列顯示") {
                 Picker("", selection: $refresher.selection) {
                     ForEach(MenuBarSelection.allCases) { option in
                         Text(option.title).tag(option)
                     }
                 }
                 .labelsHidden()
-                .controlSize(.small)
-            } label: {
-                settingLabel("選單列顯示")
+                .pickerStyle(.inline)
             }
 
-            LabeledContent {
+            Section("更新頻率") {
                 Picker("", selection: $refresher.cadence) {
                     ForEach(RefreshCadence.allCases) { option in
                         Text(option.title).tag(option)
                     }
                 }
                 .labelsHidden()
-                .pickerStyle(.segmented)
-                .controlSize(.small)
-            } label: {
-                settingLabel("更新頻率")
+                .pickerStyle(.inline)
             }
-            // 說明放在 tooltip 而不是常駐一行字——面板要保持精簡，
-            // 但「省電不會讓你看到過期數字」這件事又值得說明。
-            .help("\(refresher.cadence.detail)。睡眠時一律停止輪詢，打開面板一定會抓最新的。")
 
-            HStack(spacing: 10) {
-                Button {
-                    refresher.refreshNow()
-                } label: {
-                    Label("重新整理", systemImage: "arrow.clockwise")
-                        .font(.system(size: 11))
+            Divider()
+
+            Toggle("桌面面板", isOn: $refresher.desktopPanelVisible)
+            Toggle("開機啟動", isOn: $launchAtLogin)
+                .onChange(of: launchAtLogin) { _, enabled in
+                    LoginItem.set(enabled: enabled)
                 }
-                .buttonStyle(.borderless)
-
-                Spacer()
-
-                Toggle("開機啟動", isOn: $launchAtLogin)
-                    .toggleStyle(.checkbox)
-                    .font(.system(size: 11))
-                    .onChange(of: launchAtLogin) { _, enabled in
-                        LoginItem.set(enabled: enabled)
-                    }
-
-                Button {
-                    NSApp.terminate(nil)
-                } label: {
-                    Image(systemName: "power")
-                        .font(.system(size: 11))
-                }
-                .buttonStyle(.borderless)
-                .help("結束")
-            }
-            .padding(.top, 2)
-        }
-    }
-
-    /// 四個來源的開關。
-    ///
-    /// 用選單而不是四個常駐的勾選框：面板要保持精簡，但**關掉的來源必須留在這份清單裡**——
-    /// 否則關掉之後就從畫面上徹底消失，只能去改 config.json 才找得回來。
-    private var sourceToggles: some View {
-        Menu {
-            ForEach(SourceKind.allCases) { kind in
-                Toggle(kind.title, isOn: Binding(
-                    get: { refresher.isEnabled(kind) },
-                    set: { refresher.setEnabled($0, for: kind) }
-                ))
-            }
         } label: {
-            Text(enabledSummary)
+            Image(systemName: "gearshape")
                 .font(.system(size: 11))
         }
         .menuStyle(.borderlessButton)
-        .controlSize(.small)
-        .help("關掉的來源不只是不顯示——連背景輪詢都會停，不會再發任何請求。")
+        .menuIndicator(.hidden)      // 齒輪本身就夠明顯，再加箭頭只是噪音
+        .fixedSize()
+        .help("設定 — 更新頻率：\(refresher.cadence.detail)。睡眠時一律停止輪詢，打開面板一定會抓最新的。")
     }
+}
 
-    private var enabledSummary: String {
-        let on = SourceKind.allCases.filter { refresher.isEnabled($0) }
-        switch on.count {
-        case SourceKind.allCases.count: return "全部顯示"
-        case 0: return "全部關閉"
-        case 1: return on[0].title
-        default: return "\(on.count) 個來源"
+/// 卡片要多用力把自己跟背景分開。
+enum CardEmphasis {
+    /// 選單列面板：底下已經是系統的彈出視窗背景，淡淡一層就夠。
+    case panel
+    /// 桌面面板：底下是桌布，淡色調完全看不見，卡片得是一個真正的表面。
+    case desktop
+
+    var fill: Color {
+        switch self {
+        case .panel: return Color.primary.opacity(0.045)
+        // 0.45 是「看得出是一塊表面」與「還透得出桌布」的折衷。
+        // 再高會白得像貼紙，再低就跟毛玻璃底融在一起。
+        case .desktop: return Color(nsColor: .controlBackgroundColor).opacity(0.45)
         }
     }
 
-    private func settingLabel(_ text: String) -> some View {
-        Text(text)
-            .font(.system(size: 11))
-            .foregroundStyle(.secondary)
+    var border: Double {
+        switch self {
+        case .panel: return 0.1
+        // 底色透了之後，分隔就得靠邊框與陰影撐住。
+        case .desktop: return 0.28
+        }
+    }
+
+    var shadow: Double {
+        switch self {
+        case .panel: return 0          // 彈出視窗裡加陰影只會變髒
+        case .desktop: return 0.18     // 讓卡片浮在毛玻璃之上
+        }
     }
 }
 
 /// 一個來源一張卡。用底色分組比用分隔線的區隔感強得多——
 /// 分隔線只是一條細線，底色是一整塊面積。
-private struct SourceCard: View {
+///
+/// 選單列面板與桌面面板共用同一張卡，兩邊的樣子才不會漂移。
+struct SourceCard: View {
     @Bindable var box: SourceBox
+    var emphasis: CardEmphasis = .panel
     /// 展開狀態留在 UI 這層，重新整理資料不會把使用者展開的東西收回去。
     @State private var expanded: Set<String> = []
 
@@ -156,14 +167,17 @@ private struct SourceCard: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
             RoundedRectangle(cornerRadius: 9, style: .continuous)
-                .fill(Color.primary.opacity(0.045))
+                .fill(emphasis.fill)
+                .shadow(color: .black.opacity(emphasis.shadow), radius: 4, y: 1)
         )
         .overlay(
             // 平時用中性邊框：拿識別色當邊框的話，OpenRouter 那張近黑色的卡
             // 邊框會直接消失，四張卡看起來不成套。警戒時才換成識別色。
             RoundedRectangle(cornerRadius: 9, style: .continuous)
                 .strokeBorder(
-                    box.alert > .normal ? box.accent.opacity(0.5) : Color.primary.opacity(0.1),
+                    box.alert > .normal
+                        ? box.accent.opacity(0.6)
+                        : Color.primary.opacity(emphasis.border),
                     lineWidth: 1
                 )
         )
