@@ -18,8 +18,8 @@ struct OpenRouterBalance {
 
     /// 帳號總花費減掉看得到的 key 花費。
     ///
-    /// `/keys` 只涵蓋透過 provisioning API 建立的金鑰，從網頁後台建的永遠不會出現
-    /// （llm-ops ADR-0002）。差額如果不顯示出來，帳號的明細會看起來比實際少花很多錢。
+    /// `/keys` 只涵蓋透過 provisioning API 建立的金鑰，從網頁後台建的永遠不會出現。
+    /// 差額如果不顯示出來，帳號的明細會看起來比實際少花很多錢。
     var unattributedUsage: Double {
         max(0, totalUsage - keys.reduce(0) { $0 + $1.usage })
     }
@@ -27,9 +27,8 @@ struct OpenRouterBalance {
 
 /// OpenRouter 帳號餘額。
 ///
-/// 語意對照 ~/dev/llm-ops/scripts/lib/analytics.mjs 的 credits()：同樣 unwrap `.data`、
-/// 同樣把 body 裡的 `error` 當成失敗丟出去——OpenRouter 會用 HTTP 200 包錯誤回應，
-/// 只看 status code 會把錯誤當成功。逾時也比照那邊的 30 秒。
+/// 兩個實測過的坑：unwrap `.data`，以及把 body 裡的 `error` 當成失敗丟出去——
+/// OpenRouter 會用 HTTP 200 包錯誤回應，只看 status code 會把錯誤當成功。
 ///
 /// /credits 需要 management key，一般 inference key 會 403。
 enum OpenRouterSource {
@@ -132,11 +131,11 @@ enum OpenRouterSource {
         var data: Payload?
     }
 
-    /// key 清單與花費以 **analytics** 為準，不是 `/keys`（llm-ops ADR-0002）。
+    /// key 清單與花費以 **analytics** 為準，不是 `/keys`。
     ///
-    /// `/keys` 只看得到 provisioning API 建立的金鑰。實測 EnGenius 帳號用 `/keys`
+    /// `/keys` 只看得到 provisioning API 建立的金鑰。實測某個帳號用 `/keys`
     /// 只回一把 usage $0 的 "Default key"，而 analytics 回的三把
-    /// （EnGenie-ASK / WiFi RegHub / DS Generator）加起來剛好等於帳號總花費。
+    /// （都是從網頁後台建的）加起來剛好等於帳號總花費。
     /// 只用 `/keys` 的話，那個帳號會看起來像沒花過錢。
     ///
     /// 但 analytics 不回「上限」，所以上限還是得跟 `/keys` 拿，兩邊用 key 名稱 join。
@@ -166,7 +165,7 @@ enum OpenRouterSource {
 
     private static func fetchUsageByKey(key: String) async throws -> [String: Double] {
         // time_range 的參數名不能寫成 start_date / end_date——那樣不會報錯，
-        // 會靜默回傳預設區間（ADR-0002 記過這個坑）。也必須是完整 ISO datetime。
+        // 會靜默回傳預設區間。也必須是完整 ISO datetime。
         let end = Date()
         let start = end.addingTimeInterval(-365 * 24 * 3600)
         let formatter = ISO8601DateFormatter()

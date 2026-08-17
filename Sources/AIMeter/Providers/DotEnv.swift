@@ -1,6 +1,6 @@
 import Foundation
 
-/// 極簡 .env 讀取。只夠用來把金鑰從 llm-ops 的 .env 撈出來，
+/// 極簡 .env 讀取。只夠用來把金鑰從設定指定的 .env 撈出來，
 /// 不打算支援變數展開、多行值那些 dotenv 方言。
 enum DotEnv {
     enum Failure: LocalizedError {

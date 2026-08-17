@@ -199,7 +199,7 @@ App 內附一支能用的 Rust binary，講 JSON-RPC over stdio：
    只看 status code 會把錯誤當成功。
 
 3. **key 清單與花費要用 analytics，不能用 `/keys`。**
-   `/keys` 只涵蓋 provisioning API 建的金鑰。實測 EnGenius 帳號用 `/keys` 只回一把
+   `/keys` 只涵蓋 provisioning API 建的金鑰。實測某個帳號用 `/keys` 只回一把
    usage $0 的 "Default key"，三把真正在花錢的（都是從網頁後台建的）
    完全看不到；改用 `POST /analytics/query` + `dimensions: ["api_key_id"]` 才全都拿得到，
    而且加總剛好等於帳號的 `total_usage`。

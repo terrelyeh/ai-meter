@@ -23,6 +23,9 @@ enum HiggsfieldSource {
 
     enum Failure: LocalizedError {
         case notInstalled
+        /// PATH 上找不到 node。這支 CLI 是 Node 腳本，沒有 node 就跑不起來——
+        /// 跟憑證過期同樣必須分開講，不然使用者會去重登一個根本沒壞的帳號。
+        case missingRuntime
         /// 服務層沒回應。實測這支 CLI 大約每五次會抖一次，
         /// 跟憑證過期必須分開講——不然使用者會被叫去重登一個根本沒壞的帳號。
         case unreachable
@@ -33,6 +36,8 @@ enum HiggsfieldSource {
             switch self {
             case .notInstalled:
                 return "找不到 higgsfield CLI"
+            case .missingRuntime:
+                return "執行 higgsfield 需要的 node 找不到"
             case .unreachable:
                 return "Higgsfield 服務暫時無回應"
             case .commandFailed(let status, let output):
@@ -49,6 +54,8 @@ enum HiggsfieldSource {
             switch self {
             case .notInstalled:
                 return "npm i -g @higgsfield/cli"
+            case .missingRuntime:
+                return "把 node 所在的 bin 目錄加進 PATH，或重裝 CLI 讓它與 node 同目錄"
             case .unreachable:
                 return nil          // 自己會好，不要叫人去做任何事
             case .commandFailed, .badOutput:
@@ -62,6 +69,42 @@ enum HiggsfieldSource {
             return false
         }
     }
+
+    /// 這支 CLI 是 Node 腳本（shebang `#!/usr/bin/env node`），所以跑它需要 PATH 上有 node。
+    ///
+    /// 從終端機執行沒問題，但 app 由 Finder 或 LaunchAgent 啟動時 PATH 只有系統最小預設值，
+    /// `env node` 就會失敗。這也是為什麼 `make probe` 過了不代表 app 沒事——
+    /// probe 繼承的是你 shell 的 PATH，app 沒有。
+    ///
+    /// 解法：沿著符號連結一層一層走，把每一層所在的目錄都加進 PATH。
+    /// npm 安裝的 CLI 幾乎都跟執行它的 node 放在同一個 bin 目錄
+    ///（這台機器上 higgsfield 與 node 都在 ~/.hermes/node/bin）。
+    private static func searchPath(for executable: String) -> String {
+        var dirs: [String] = []
+        var current = executable
+
+        for _ in 0..<8 {                       // 上限只是避免壞掉的循環連結
+            let dir = (current as NSString).deletingLastPathComponent
+            if !dir.isEmpty, !dirs.contains(dir) { dirs.append(dir) }
+
+            guard let target = try? FileManager.default.destinationOfSymbolicLink(atPath: current)
+            else { break }
+            current = target.hasPrefix("/")
+                ? target
+                : (dir as NSString).appendingPathComponent(target)
+        }
+
+        dirs += ["/opt/homebrew/bin", "/usr/local/bin", "/usr/bin", "/bin"]
+        if let inherited = ProcessInfo.processInfo.environment["PATH"] { dirs.append(inherited) }
+        return dirs.joined(separator: ":")
+    }
+
+    /// `env: node: No such file or directory`
+    private static let runtimeMarkers = [
+        "env: node",
+        "node: No such file",
+        "env: node:",
+    ]
 
     /// 實測看到的抖動訊息長這樣：`Error: request failed (no response received)`
     private static let transientMarkers = [
@@ -101,6 +144,8 @@ enum HiggsfieldSource {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: executable)
         process.arguments = ["account", "status", "--json"]
+        process.environment = ProcessInfo.processInfo.environment
+            .merging(["PATH": searchPath(for: executable)]) { _, new in new }
 
         let stdout = Pipe()
         let stderr = Pipe()
@@ -120,6 +165,9 @@ enum HiggsfieldSource {
             let stdoutText = String(data: outData, encoding: .utf8) ?? ""
             let combined = stderrText.isEmpty ? stdoutText : stderrText
 
+            if Self.runtimeMarkers.contains(where: { combined.localizedCaseInsensitiveContains($0) }) {
+                throw Failure.missingRuntime
+            }
             if Self.transientMarkers.contains(where: { combined.localizedCaseInsensitiveContains($0) }) {
                 throw Failure.unreachable
             }
