@@ -7,8 +7,17 @@ struct PanelView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            ForEach(refresher.boxes, id: \.title) { box in
-                SourceCard(box: box)
+            if refresher.boxes.isEmpty {
+                // 全關掉時面板會空無一物，得告訴使用者東西在哪、怎麼開回來。
+                Text("目前沒有啟用任何來源。\n用下方的「顯示項目」把要看的打開。")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.vertical, 6)
+            } else {
+                ForEach(refresher.boxes, id: \.title) { box in
+                    SourceCard(box: box)
+                }
             }
 
             Divider().padding(.top, 4)
@@ -27,6 +36,12 @@ struct PanelView: View {
     /// 為三個控制項付這個代價、還多一次點擊，不划算。
     private var footer: some View {
         VStack(alignment: .leading, spacing: 8) {
+            LabeledContent {
+                sourceToggles
+            } label: {
+                settingLabel("顯示項目")
+            }
+
             LabeledContent {
                 Picker("", selection: $refresher.selection) {
                     ForEach(MenuBarSelection.allCases) { option in
@@ -83,6 +98,37 @@ struct PanelView: View {
                 .help("結束")
             }
             .padding(.top, 2)
+        }
+    }
+
+    /// 四個來源的開關。
+    ///
+    /// 用選單而不是四個常駐的勾選框：面板要保持精簡，但**關掉的來源必須留在這份清單裡**——
+    /// 否則關掉之後就從畫面上徹底消失，只能去改 config.json 才找得回來。
+    private var sourceToggles: some View {
+        Menu {
+            ForEach(SourceKind.allCases) { kind in
+                Toggle(kind.title, isOn: Binding(
+                    get: { refresher.isEnabled(kind) },
+                    set: { refresher.setEnabled($0, for: kind) }
+                ))
+            }
+        } label: {
+            Text(enabledSummary)
+                .font(.system(size: 11))
+        }
+        .menuStyle(.borderlessButton)
+        .controlSize(.small)
+        .help("關掉的來源不只是不顯示——連背景輪詢都會停，不會再發任何請求。")
+    }
+
+    private var enabledSummary: String {
+        let on = SourceKind.allCases.filter { refresher.isEnabled($0) }
+        switch on.count {
+        case SourceKind.allCases.count: return "全部顯示"
+        case 0: return "全部關閉"
+        case 1: return on[0].title
+        default: return "\(on.count) 個來源"
         }
     }
 

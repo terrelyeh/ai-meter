@@ -28,17 +28,45 @@ final class Refresher {
     )
 
     /// 只有啟用的來源才會出現。停用的是**不存在**，不是灰掉——
-    /// 同事沒裝 Higgsfield 就不該在畫面上看到 Higgsfield。
+    /// 沒裝 Higgsfield 就不該在畫面上看到 Higgsfield。
     var boxes: [SourceBox] {
-        var out: [SourceBox] = []
-        if config.claudeCode.enabled { out.append(claude) }
-        if config.codex.enabled { out.append(codex) }
-        if config.openRouter.enabled { out.append(openRouter) }
-        if config.higgsfield.enabled { out.append(higgsfield) }
-        return out
+        SourceKind.allCases.filter { config.enabled($0) }.map(box)
     }
 
-    private(set) var config: AppConfig
+    func box(_ kind: SourceKind) -> SourceBox {
+        switch kind {
+        case .claudeCode: return claude
+        case .codex: return codex
+        case .openRouter: return openRouter
+        case .higgsfield: return higgsfield
+        }
+    }
+
+    private func refresh(_ kind: SourceKind) async {
+        switch kind {
+        case .claudeCode: await refreshClaude()
+        case .codex: await refreshCodex()
+        case .openRouter: await refreshOpenRouter()
+        case .higgsfield: await refreshHiggsfield()
+        }
+    }
+
+    // MARK: 啟用／停用
+
+    func isEnabled(_ kind: SourceKind) -> Bool { config.enabled(kind) }
+
+    /// 停用不只是不顯示——連輪詢迴圈都會被拆掉，所以真的不會再發請求。
+    func setEnabled(_ enabled: Bool, for kind: SourceKind) {
+        guard config.enabled(kind) != enabled else { return }
+        config.setEnabled(enabled, for: kind)
+        do { try config.save() } catch {
+            NSLog("[AIMeter] 寫入設定失敗: \(error)")
+        }
+        pause()
+        resume()
+    }
+
+    private var config: AppConfig
 
     private var tasks: [Task<Void, Never>] = []
     private var observers: [NSObjectProtocol] = []
@@ -76,20 +104,11 @@ final class Refresher {
     /// 停用的來源連迴圈都不建——不只是不顯示，是完全不花成本。
     private func resume() {
         guard tasks.isEmpty else { return }
-        let every = cadence.intervals
-
-        if config.claudeCode.enabled {                                          // 本機小檔，成本趨近於零
-            tasks.append(loop(seconds: every.claude) { await self.refreshClaude() })
-        }
-        if config.codex.enabled {                                               // 每次起一支 219 MB 的 binary
-            tasks.append(loop(seconds: every.codex) { await self.refreshCodex() })
-        }
-        if config.openRouter.enabled {                                          // 每次數個 HTTPS 請求
-            tasks.append(loop(seconds: every.openRouter) { await self.refreshOpenRouter() })
-        }
-        if config.higgsfield.enabled {                                          // 每次 fork 一個 node CLI
-            tasks.append(loop(seconds: every.higgsfield) { await self.refreshHiggsfield() })
-        }
+        tasks = SourceKind.allCases
+            .filter { config.enabled($0) }
+            .map { kind in
+                loop(seconds: cadence.interval(for: kind)) { await self.refresh(kind) }
+            }
     }
 
     private func pause() {
@@ -122,28 +141,19 @@ final class Refresher {
     // MARK: 取數時機
 
     func refreshNow() {
-        if config.claudeCode.enabled { Task { await refreshClaude() } }
-        if config.codex.enabled { Task { await refreshCodex() } }
-        if config.openRouter.enabled { Task { await refreshOpenRouter() } }
-        if config.higgsfield.enabled { Task { await refreshHiggsfield() } }
+        for kind in SourceKind.allCases where config.enabled(kind) {
+            Task { await refresh(kind) }
+        }
     }
 
     /// 面板打開的那一刻——這才是使用者真正在看的時候，值得花成本。
     /// 有節流，連續開關面板不會每次都重抓。
     func panelDidOpen() {
-        if config.claudeCode.enabled { refreshIfStale(claude, seconds: 30, using: refreshClaude) }
-        if config.codex.enabled { refreshIfStale(codex, seconds: 120, using: refreshCodex) }
-        if config.openRouter.enabled { refreshIfStale(openRouter, seconds: 120, using: refreshOpenRouter) }
-        if config.higgsfield.enabled { refreshIfStale(higgsfield, seconds: 300, using: refreshHiggsfield) }
-    }
-
-    private func refreshIfStale(
-        _ box: SourceBox,
-        seconds: TimeInterval,
-        using body: @escaping () async -> Void
-    ) {
-        if let last = box.lastFetch, Date().timeIntervalSince(last) < seconds { return }
-        Task { await body() }
+        for kind in SourceKind.allCases where config.enabled(kind) {
+            let threshold = cadence.openThreshold(for: kind)
+            if let last = box(kind).lastFetch, Date().timeIntervalSince(last) < threshold { continue }
+            Task { await refresh(kind) }
+        }
     }
 
     private func loop(seconds: UInt64, _ body: @escaping @MainActor () async -> Void) -> Task<Void, Never> {

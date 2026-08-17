@@ -7,13 +7,23 @@ import Foundation
 /// 錯誤路徑也能在這裡測（例如把 .env 改壞、把 CLI 藏起來）。
 enum Probe {
     static func run() -> Never {
-        AppConfig.bootstrap()
+        let config = AppConfig.bootstrap()
         let semaphore = DispatchSemaphore(value: 0)
         Task {
-            await probeClaude()
-            await probeCodex()
-            await probeOpenRouter()
-            await probeHiggsfield()
+            // 只跑啟用中的來源。全部都跑的話，probe 會回報一個
+            // 跟 app 實際在做的事不一樣的結果。
+            for kind in SourceKind.allCases {
+                guard config.enabled(kind) else {
+                    print("\n\u{001B}[1m\(kind.title)\u{001B}[0m\n  · 已停用，略過")
+                    continue
+                }
+                switch kind {
+                case .claudeCode: await probeClaude()
+                case .codex: await probeCodex()
+                case .openRouter: await probeOpenRouter()
+                case .higgsfield: await probeHiggsfield()
+                }
+            }
             semaphore.signal()
         }
         semaphore.wait()
