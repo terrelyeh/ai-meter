@@ -12,7 +12,8 @@ final class Refresher {
     // 同時保持四個輪廓差異夠大——選單列會把顏色吃掉，那裡只剩形狀可以分辨。
     let claude = SourceBox(
         title: "Claude Code", symbol: "sparkle",                    // 星芒
-        brand: Brand(0.85, 0.47, 0.34)          // Claude 橙
+        brand: Brand(0.85, 0.47, 0.34),         // Claude 橙
+        headlineMetricID: "sd"                  // 選單列顯示 7 天，不是 5 小時窗
     )
     let codex = SourceBox(
         title: "Codex", symbol: "terminal.fill",                    // >_ 終端機
@@ -363,13 +364,25 @@ final class Refresher {
     }
 
     /// 一個來源在選單列上的代表數字：優先取警戒最高的那一列，否則取第一列。
+    /// 選單列上代表這個來源的那一個指標。
+    ///
+    /// 指定了 headlineMetricID 就照它——即使同一張卡裡有別的指標更嚴重。
+    /// 那個「更嚴重的別人」不會被吞掉：它會讓 otherCritical 亮起記號，
+    /// 但不會把使用者指定要看的數字換掉。
     private func headline(for box: SourceBox) -> Headline? {
-        guard let metric = box.metrics.first(where: { $0.effectiveAlert == box.alert })
+        let preferred = box.headlineMetricID.flatMap { id in
+            box.metrics.first { $0.id == id }
+        }
+        guard let metric = preferred
+                ?? box.metrics.first(where: { $0.effectiveAlert == box.alert })
                 ?? box.metrics.first
         else { return nil }
+
         return Headline(
             symbol: box.symbol, brand: box.brand,
-            text: metric.value, alert: metric.effectiveAlert
+            text: metric.value, alert: metric.effectiveAlert,
+            // 同一張卡裡有沒被顯示出來、而且已經 critical 的指標？
+            otherCritical: box.metrics.contains { $0.id != metric.id && $0.effectiveAlert == .critical }
         )
     }
 
@@ -378,7 +391,8 @@ final class Refresher {
         if let pinned = box(for: selection) {
             var result = headline(for: pinned)
                 ?? Headline(symbol: pinned.symbol, brand: pinned.brand, text: "—", alert: .normal)
-            result.otherCritical = boxes.contains { $0 !== pinned && $0.alert == .critical }
+            result.otherCritical = result.otherCritical
+                || boxes.contains { $0 !== pinned && $0.alert == .critical }
             return result
         }
 

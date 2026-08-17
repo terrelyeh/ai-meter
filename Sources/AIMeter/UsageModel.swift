@@ -76,6 +76,11 @@ final class SourceBox {
     let symbol: String
     /// 面板裡的識別色。四個灰色圖示掃起來全都一樣，顏色才是最快的線索。
     let brand: Brand
+    /// 選單列上要用哪一個指標代表這個來源。
+    ///
+    /// Claude 指定 7 天而不是 5 小時窗：5 小時窗一直在重置，數字跳來跳去，
+    /// 真正會卡住你一整週的是 7 天那條。nil 就用第一個指標。
+    let headlineMetricID: String?
 
     var accent: Color { brand.color }
 
@@ -89,10 +94,11 @@ final class SourceBox {
     /// 沒有這個訊號的話使用者會以為按鈕壞了。
     var isRefreshing = false
 
-    init(title: String, symbol: String, brand: Brand) {
+    init(title: String, symbol: String, brand: Brand, headlineMetricID: String? = nil) {
         self.title = title
         self.symbol = symbol
         self.brand = brand
+        self.headlineMetricID = headlineMetricID
     }
 
     var alert: AlertLevel { metrics.map(\.effectiveAlert).max() ?? .normal }
