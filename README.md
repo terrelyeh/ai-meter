@@ -1,0 +1,245 @@
+# AI Meter
+
+> **你是 AI agent 嗎？安裝流程請讀 [AGENTS.md](AGENTS.md)。**
+> 本檔講的是設計理由與踩過的坑，不是安裝步驟。
+
+macOS 選單列上的 AI 用量儀表。一眼看完 Claude Code、Codex、OpenRouter、Higgsfield 的剩餘額度。
+
+```
+make install     # 編譯 → 組 .app → 裝到 ~/Applications → 啟動
+make probe       # 不開 UI，直接印出四個源現在的數字（除錯用）
+make uninstall   # 移除 app 與開機啟動設定
+```
+
+## 開關與設定
+
+- **設定**：面板右下角的齒輪。裡面有選單列顯示哪一源、開機自動啟動、背景更新頻率，
+  以及一份唯讀的「資料從哪來」清單（數字看起來不對時可以直接看該查哪個檔）。
+- **關掉**：面板右下角的電源鈕，或 `pkill -x AIMeter`。
+- **再打開**：Spotlight 搜「AI Meter」，或 `open ~/Applications/"AI Meter.app"`。
+- ⚠️ 勾了開機啟動又手動結束，**下次登入還是會啟動**。要永久不啟動就先取消勾選再結束。
+
+設定視窗用具名 `Window` scene 而不是 SwiftUI 的 `Settings` scene：這支是 `LSUIElement`，
+沒有主選單列，⌘, 沒有東西可以掛，所以只能靠面板上的齒輪 `openWindow` 叫出來
+（並且要先 `NSApp.activate`，否則視窗會開在別的 app 後面，看起來像沒反應）。
+
+---
+
+## 為什麼是選單列而不是控制中心
+
+macOS 26 Tahoe 確實開放了第三方控制中心 control，但那必須是 WidgetKit extension；
+extension 跑在沙盒裡，要跟主程式共用資料得靠 App Group entitlement，而那需要 Apple 簽章身分。
+這台機器沒有開發者憑證，也不打算辦。
+
+選單列 App 沒有這個限制：純 app、沒有 extension、ad-hoc 簽章（`codesign -s -`）本機就能跑。
+如果哪天有了開發者帳號，`Providers/` 底下的東西可以原封不動被 widget extension 重用。
+
+## 四個資料源
+
+| 來源 | 取得方式 | 背景節奏 | 單次成本（實測） |
+|---|---|---|---|
+| Claude Code | `~/Library/Application Support/Claude/plan-usage-history.json` + `~/.claude/rate-limits.json` | 60s | 趨近於零 |
+| Codex | `ChatGPT.app` 內附的 `codex app-server`，JSON-RPC | 15 min | 0.12s CPU、68 MB RSS |
+| OpenRouter | `/credits` + `/keys` × 2 帳號，金鑰讀 `~/dev/llm-ops/.env` | 15 min | 4 個 HTTPS 請求 |
+| Higgsfield | `higgsfield account status --json` | 30 min | 0.04s CPU、42 MB RSS |
+
+## 耗電
+
+穩態實測 **0.056% CPU**（180 秒只用掉 0.10 秒），RSS 穩定在 ~73 MB 不成長。
+
+但 CPU 從來不是這種常駐小工具的主要耗電來源，所以節奏是照下面三個原則設計的：
+
+1. **螢幕或系統睡著時完全停止輪詢**（`NSWorkspace` 的 sleep/wake 通知）。
+   沒有這個的話，闔上蓋子整晚它還是會定期把 Wi-Fi 無線電從深度睡眠叫醒，
+   而那段時間根本沒有人在看選單列。醒來時每個迴圈會先跑一次，所以數字立刻是新的。
+2. **背景節奏放鬆，打開面板才抓最新的。** 選單列上的數字只要大致對就夠用；
+   真的要看細節時會點開面板，`panelDidOpen()` 這時才付成本（有節流，連續開關不會重抓）。
+3. **貴的源跑得更慢。** Claude 是讀本機小檔（而且 mtime 沒變就不重新解析），所以 60 秒無妨；
+   Codex 每次要起一支 219 MB 的 binary，Higgsfield 要 fork node，那些就拉到 15 / 30 分鐘。
+
+---
+
+### Claude Code
+
+**百分比**來自 `plan-usage-history.json`：
+
+```json
+{ "version": 2, "samples": [ { "t": 1786958526101, "org": "…",
+  "u": { "fh": 25, "sd": 33, "xu": 0 } } ] }
+```
+
+`fh` = 5 小時窗用量 %、`sd` = 7 天用量 %、`xu` = 超額 %（沒超額時通常整個欄位不存在）。
+
+**重置時間**不在那個檔裡。`resets_at` 只存在於 Claude Code 餵給 statusline 的 payload，
+而那份 payload 只在 session 執行時出現。所以裝了一層 wrapper：
+
+```
+~/.claude/settings.json  statusLine.command → bash ~/.claude/statusline-mirror.sh
+                                                 ├─ 把 rate_limits 寫進 ~/.claude/rate-limits.json
+                                                 └─ payload 原封不動轉交給 statusline-command.sh
+```
+
+做成 wrapper 而不是改 `statusline-command.sh`，是因為那支是第三方的 starter kit，
+改了它下次更新就沒了。wrapper 本身刻意寫成「絕不擋路」——鏡射失敗也一定把 payload 交出去，
+否則 statusline 會整條消失，而使用者只會覺得 Claude Code 壞了。
+
+讀不到鏡射檔不是錯誤，只是少了倒數；百分比照常顯示。
+
+#### 為什麼不算 token
+
+`~/.claude/projects/**/*.jsonl` 有完整 token 紀錄，但那是 771 個檔、1.3 GB，
+而且同一次回應會被寫成多行、每行都帶一份完整的 `usage`（實測重複約 3.2 倍），
+天真加總會多算三倍。要正確就得做增量 tail 加上依 `message.id` 去重。
+
+代價那麼高，換來的只是「花了多少美金」的推估——但訂閱制付的是固定月費，
+真正需要知道的是**額度用掉幾成**，而那個直接讀得到。
+
+⚠️ `plan-usage-history.json` 由 **Claude 桌面 App** 寫入，只在它執行時更新。
+程式會用樣本自己的時間戳判斷，超過 15 分鐘就標示，不會把舊數字當現況。
+它是 Claude.app 的內部格式，沒有相容性承諾。
+
+---
+
+### Codex
+
+使用者跑的是 **ChatGPT 桌面 App**，不是 npm 的 `codex` CLI（那支的 vendored binary 是壞的，別用）。
+App 內附一支能用的 Rust binary，講 JSON-RPC over stdio：
+
+```
+/Applications/ChatGPT.app/Contents/Resources/codex app-server
+  → initialize          （必須等它回應）
+  → initialized
+  → account/rateLimits/read
+```
+
+⚠️ **握手順序不能省。** 三行一次灌進去伺服器不會回你要的東西——實測會收到三行輸出但裡面沒有結果。
+必須等 `initialize` 的回應到了才送後面兩行。
+
+它跟 App 共用 `~/.codex/auth.json`，所以 token 換發不用我們管。
+這也是為什麼不直接拿 `auth.json` 裡的 JWT 去打 OpenAI 後端——那樣要自己處理過期與換發。
+
+⚠️ **視窗長度不要寫死成「5 小時 / 每週」。** 不同方案不一樣：這個帳號（`prolite`）
+只有一個 `windowDurationMins: 10080` 的窗，`secondary` 是 `null`，**根本沒有 5 小時窗**。
+顯示名稱一律由 `windowDurationMins` 推導。
+
+只呼叫唯讀方法。`account/rateLimitResetCredit/consume` 會花掉一張重置額度、
+`account/logout` 會把人登出——那些絕對不能碰。
+
+---
+
+### OpenRouter
+
+`/credits` 給帳號餘額，`/keys` 給每把 key 的上限與用量。點帳號那一列可以展開明細（預設收起）。
+
+兩個坑：
+
+1. `/credits` 需要 **management key**，一般 inference key 會 403。
+   金鑰沿用 `~/dev/llm-ops/.env` 的 `OPENROUTER_MGMT_A`（個人）與 `_B`（EnGenius）。
+2. **OpenRouter 會用 HTTP 200 回傳錯誤**，body 裡放 `{"error": {...}}`。
+   只看 status code 會把錯誤當成功。處理方式對照 `~/dev/llm-ops/scripts/lib/analytics.mjs` 的 `credits()`。
+
+3. **key 清單與花費要用 analytics，不能用 `/keys`**（llm-ops ADR-0002 就是這樣寫的）。
+   `/keys` 只涵蓋 provisioning API 建的金鑰。實測 EnGenius 帳號用 `/keys` 只回一把
+   usage $0 的 "Default key"，三把真正在花錢的（都是從網頁後台建的）
+   完全看不到；改用 `POST /analytics/query` + `dimensions: ["api_key_id"]` 才全都拿得到，
+   而且加總剛好等於帳號的 `total_usage`。
+
+   但 analytics **不回上限**，所以上限仍然得跟 `/keys` 拿，兩邊用 key 名稱 join。
+   最終列表是兩者的聯集：有花費的（analytics）＋ 有設上限但還沒花錢的（`/keys`）。
+
+   還留了一列「未歸戶」當保險——analytics 查的是近 365 天，比這更早的花費會落在那裡。
+   正常情況它不會出現。
+
+`time_range` 的參數名不能寫成 `start_date`/`end_date`，那樣不會報錯，會靜默回傳預設區間。
+
+一個帳號失敗不影響另一個；明細拿不到也不會讓餘額跟著失敗。
+兩個帳號在面板裡各自成塊（自己的底色＋左側色條），因為並排時光靠列距分不出哪些 key 屬於誰。
+
+---
+
+### Higgsfield
+
+官方 API docs 只有送件 / 查狀態 / 取消，沒有餘額端點。但本機的 `@higgsfield/cli`
+有 `account status --json`。
+
+實測這支 CLI 大約每五次失敗一次，訊息是 `Error: request failed (no response received)`。
+那是網路層抖動，**不是憑證過期**——所以會重試 3 次（間隔 2 秒），並把這類錯誤跟認證錯誤分開，
+不會叫你去跑一個沒必要的 `higgsfield auth login`。
+
+---
+
+## 共通的錯誤處理原則
+
+**失敗時保留上次的好數字並標明時間，不要清成空白。**
+空白看起來像「沒事」，那比顯示一個標明過期的舊數字更危險。四個源都是這樣。
+
+失敗的區塊留在原地講清楚發生什麼事，並給出可執行的下一步。
+各源互不影響——Higgsfield 憑證過期不該讓 Claude 那一格消失。
+
+## 除錯
+
+```bash
+make probe
+```
+
+走的是**跟 UI 完全同一份** provider 程式碼。它印出來的對，選單列裡的就對。
+
+四個路徑都能用環境變數覆寫，用來測錯誤路徑而不必動到真的檔案：
+
+```bash
+AIMETER_CLAUDE_HISTORY=/tmp/bad.json \
+AIMETER_RATE_LIMIT_MIRROR=/tmp/nope.json \
+AIMETER_OPENROUTER_ENV=/tmp/bad.env \
+AIMETER_CODEX_BIN=/nonexistent \
+AIMETER_HIGGSFIELD_BIN=/nonexistent \
+  ./.build/release/AIMeter --probe
+```
+
+## 結構
+
+```
+Sources/AIMeter/
+  AIMeterApp.swift    @main，--probe 在這裡分流
+  Probe.swift            CLI 驗證模式
+  Refresher.swift        各源的更新迴圈、警戒門檻、選單列標題選誰
+  UsageModel.swift       SourceBox / Metric（可巢狀）/ SourceStatus（含 degraded）
+  LoginItem.swift        LaunchAgent 開機啟動
+  Providers/             五個資料源 + .env 解析 + 測試用路徑覆寫
+  UI/                    面板、可展開的列、進度條、選單列標題
+```
+
+沒有 `.xcodeproj` 是刻意的——`swift build` 在 CLI 就跑得動，`.app` 不過是
+一個 Info.plist 加一支執行檔，`scripts/bundle.sh` 幾行就組完。
+
+## 警戒門檻
+
+| | 黃 | 紅 |
+|---|---|---|
+| Claude 5 小時窗 | 60% | 80% |
+| Claude 7 天 | 70% | 90% |
+| Codex 各視窗 | 70% | 90% |
+| OpenRouter 帳號餘額 | < $15 | < $5 |
+| OpenRouter 單把 key | 用掉 75% | 用掉 90% |
+| Higgsfield credits | < 1500 | < 500 |
+
+子項的警戒會往上冒泡，所以某把 key 快撞上限時，就算收起來也看得到。
+
+## 選單列顯示哪一個
+
+面板底部可以選，會記住（存在 `UserDefaults` 的 `menuBarSelection`）。
+
+- **自動**（預設）：平常顯示 Claude 的 5 小時窗；任一源進入警戒就換成那一個。
+- **釘住某一源**：永遠顯示它。但如果**別的**源進入 critical，前面會多一個 `⚠︎` 圓點——
+  釘住是為了讓你自己決定看什麼，不是為了把壞消息藏起來。
+
+選單列上不靠顏色分辨（系統的 template rendering 會吃掉），所以四個符號的輪廓刻意差很多：
+星芒 / 角括號 / 分岔 / 底片。面板裡才用彩色徽章，那裡顏色是最快的掃描線索。
+
+## 介面上的兩個刻意決定
+
+**每個來源一張卡，不用分隔線。** 分隔線只是一條細線，底色是一整塊面積，區隔感差很多。
+卡片外框在該來源進入警戒時會加深，所以不用讀數字也知道哪一塊要注意。
+
+**時間戳帶到秒，而且更新中會轉圈。** 各源的數字常常前後一模一樣，
+如果時間戳只到分鐘，同一分鐘內按「重新整理」畫面完全不會動——
+按鈕其實有作用，但看起來像壞掉。這是回饋問題，不是功能問題。
