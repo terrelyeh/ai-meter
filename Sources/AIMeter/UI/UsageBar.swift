@@ -72,8 +72,8 @@ struct MetricRow: View {
             header
             if let detail = metric.detail {
                 Text(detail)
-                    .font(.system(size: 9.5))
-                    .foregroundStyle(.tertiary)
+                    .font(.system(size: 10.5))
+                    .foregroundStyle(.secondary)
                     .padding(.leading, expandable ? 12 : 0)
                     .fixedSize(horizontal: false, vertical: true)
             }

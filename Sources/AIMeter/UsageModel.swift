@@ -49,6 +49,24 @@ enum SourceStatus {
     case failed(message: String, hint: String?)
 }
 
+/// 一個來源的識別色，以及疊在它上面該用什麼顏色。
+///
+/// 兩個顏色一起算是必要的：Higgsfield 是螢光黃綠，白色圖示疊上去會看不見；
+/// OpenRouter 是近黑色，深色圖示疊上去同樣看不見。
+struct Brand {
+    let color: Color
+    /// 疊在 color 上的圖示顏色。
+    let onColor: Color
+
+    init(_ red: Double, _ green: Double, _ blue: Double) {
+        color = Color(red: red, green: green, blue: blue)
+        let luminance = 0.2126 * red + 0.7152 * green + 0.0722 * blue
+        onColor = luminance > 0.6
+            ? Color(red: 0.08, green: 0.09, blue: 0.10)
+            : .white
+    }
+}
+
 @MainActor
 @Observable
 final class SourceBox {
@@ -57,7 +75,9 @@ final class SourceBox {
     /// 所以四個符號的輪廓要夠不一樣。
     let symbol: String
     /// 面板裡的識別色。四個灰色圖示掃起來全都一樣，顏色才是最快的線索。
-    let accent: Color
+    let brand: Brand
+
+    var accent: Color { brand.color }
 
     var status: SourceStatus = .loading
     var metrics: [Metric] = []
@@ -69,10 +89,10 @@ final class SourceBox {
     /// 沒有這個訊號的話使用者會以為按鈕壞了。
     var isRefreshing = false
 
-    init(title: String, symbol: String, accent: Color) {
+    init(title: String, symbol: String, brand: Brand) {
         self.title = title
         self.symbol = symbol
-        self.accent = accent
+        self.brand = brand
     }
 
     var alert: AlertLevel { metrics.map(\.effectiveAlert).max() ?? .normal }

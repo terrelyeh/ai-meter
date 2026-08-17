@@ -78,8 +78,13 @@ private struct SourceCard: View {
                 .fill(Color.primary.opacity(0.045))
         )
         .overlay(
+            // 平時用中性邊框：拿識別色當邊框的話，OpenRouter 那張近黑色的卡
+            // 邊框會直接消失，四張卡看起來不成套。警戒時才換成識別色。
             RoundedRectangle(cornerRadius: 9, style: .continuous)
-                .strokeBorder(box.accent.opacity(box.alert > .normal ? 0.45 : 0.13), lineWidth: 1)
+                .strokeBorder(
+                    box.alert > .normal ? box.accent.opacity(0.5) : Color.primary.opacity(0.1),
+                    lineWidth: 1
+                )
         )
     }
 
@@ -103,7 +108,13 @@ private struct SourceCard: View {
             .overlay(
                 Image(systemName: box.symbol)
                     .font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(.white)
+                    // 亮底配深圖示、暗底配白圖示，不然螢光黃綠上的白圖示會消失
+                    .foregroundStyle(box.brand.onColor)
+            )
+            .overlay(
+                // 近黑色的徽章在深色模式下會融進卡片背景，靠這條細邊維持輪廓
+                RoundedRectangle(cornerRadius: 5, style: .continuous)
+                    .strokeBorder(Color.primary.opacity(0.15), lineWidth: 0.5)
             )
     }
 
@@ -118,9 +129,9 @@ private struct SourceCard: View {
         } else if let lastFetch = box.lastFetch {
             // 帶到秒——只到分鐘的話，同一分鐘內重新整理畫面完全不會動。
             Text(Self.clock.string(from: lastFetch))
-                .font(.system(size: 9.5))
+                .font(.system(size: 10))
                 .monospacedDigit()
-                .foregroundStyle(.tertiary)
+                .foregroundStyle(.secondary)
         }
     }
 
@@ -174,8 +185,8 @@ private struct SourceCard: View {
 
     private func caption(_ text: String) -> some View {
         Text(text)
-            .font(.system(size: 10))
-            .foregroundStyle(.tertiary)
+            .font(.system(size: 10.5))
+            .foregroundStyle(.secondary)
             .fixedSize(horizontal: false, vertical: true)
     }
 
@@ -191,8 +202,8 @@ private struct SourceCard: View {
                     .fixedSize(horizontal: false, vertical: true)
                 if let hint {
                     Text(hint)
-                        .font(.system(size: 10).monospaced())
-                        .foregroundStyle(.tertiary)
+                        .font(.system(size: 10.5).monospaced())
+                        .foregroundStyle(.secondary)
                         .textSelection(.enabled)
                         .fixedSize(horizontal: false, vertical: true)
                 }

@@ -8,22 +8,23 @@ import SwiftUI
 @MainActor
 @Observable
 final class Refresher {
-    // 符號選輪廓差異大的（星芒 / 角括號 / 分岔 / 底片），顏色貼近各家自己的識別色。
+    // 顏色取各家自己的識別色，符號盡量貼近各家的標誌，
+    // 同時保持四個輪廓差異夠大——選單列會把顏色吃掉，那裡只剩形狀可以分辨。
     let claude = SourceBox(
-        title: "Claude Code", symbol: "sparkle",
-        accent: Color(red: 0.85, green: 0.47, blue: 0.34)          // Claude 橙
+        title: "Claude Code", symbol: "sparkle",                    // 星芒
+        brand: Brand(0.85, 0.47, 0.34)          // Claude 橙
     )
     let codex = SourceBox(
-        title: "Codex", symbol: "chevron.left.forwardslash.chevron.right",
-        accent: Color(red: 0.10, green: 0.66, blue: 0.53)          // OpenAI 綠
+        title: "Codex", symbol: "terminal.fill",                    // >_ 終端機
+        brand: Brand(0.31, 0.36, 0.91)          // Codex 藍紫
     )
     let openRouter = SourceBox(
-        title: "OpenRouter", symbol: "arrow.triangle.branch",
-        accent: Color(red: 0.36, green: 0.42, blue: 0.95)          // 靛藍
+        title: "OpenRouter", symbol: "arrow.left.arrow.right",      // 對向箭頭＝轉送
+        brand: Brand(0.11, 0.12, 0.14)          // OpenRouter 近黑
     )
     let higgsfield = SourceBox(
-        title: "Higgsfield", symbol: "film",
-        accent: Color(red: 0.71, green: 0.35, blue: 0.86)          // 紫
+        title: "Higgsfield", symbol: "scribble",                    // 曲線緞帶
+        brand: Brand(0.80, 0.95, 0.18)          // Higgsfield 螢光黃綠
     )
 
     /// 只有啟用的來源才會出現。停用的是**不存在**，不是灰掉——
@@ -328,6 +329,8 @@ final class Refresher {
 
     struct Headline {
         var symbol: String
+        /// 選單列的徽章要自己畫，所以顏色得跟著 headline 一起傳出去。
+        var brand: Brand
         var text: String
         var alert: AlertLevel
         /// 釘住某一源時，別的源出事了還是得讓人知道，否則就變成
@@ -354,14 +357,17 @@ final class Refresher {
         guard let metric = box.metrics.first(where: { $0.effectiveAlert == box.alert })
                 ?? box.metrics.first
         else { return nil }
-        return Headline(symbol: box.symbol, text: metric.value, alert: metric.effectiveAlert)
+        return Headline(
+            symbol: box.symbol, brand: box.brand,
+            text: metric.value, alert: metric.effectiveAlert
+        )
     }
 
     /// 釘住了就照釘住的顯示；`.auto` 才回到「平常 Claude、有警戒就換人」的邏輯。
     var headline: Headline {
         if let pinned = box(for: selection) {
             var result = headline(for: pinned)
-                ?? Headline(symbol: pinned.symbol, text: "—", alert: .normal)
+                ?? Headline(symbol: pinned.symbol, brand: pinned.brand, text: "—", alert: .normal)
             result.otherCritical = boxes.contains { $0 !== pinned && $0.alert == .critical }
             return result
         }
@@ -370,7 +376,8 @@ final class Refresher {
         if let worst = candidates.filter({ $0.alert > .normal }).max(by: { $0.alert < $1.alert }) {
             return worst
         }
-        return candidates.first ?? Headline(symbol: "gauge.with.needle", text: "—", alert: .normal)
+        return candidates.first
+            ?? Headline(symbol: "gauge.with.needle", brand: Brand(0.5, 0.5, 0.52), text: "—", alert: .normal)
     }
 
     // MARK: 小工具
