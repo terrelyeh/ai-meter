@@ -7,21 +7,44 @@ macOS 選單列上的 AI 用量儀表。一眼看完 Claude Code、Codex、OpenR
 
 ```
 make install     # 編譯 → 組 .app → 裝到 ~/Applications → 啟動
-make probe       # 不開 UI，直接印出四個源現在的數字（除錯用）
+make probe       # 不開 UI，直接印出啟用中的來源現在的數字（除錯用）
 make uninstall   # 移除 app 與開機啟動設定
 ```
 
 ## 開關與設定
 
-- **設定**：都在面板下方——選單列顯示哪一源、背景更新頻率、開機自動啟動。
+設定全部在面板下方：
+
+- **顯示項目**：逐一開關四個來源。
+- **選單列顯示**：選單列上要顯示哪一源。
+- **更新頻率**：省電 / 標準 / 積極。
+- **開機啟動**：登入時自動啟動。
+
+其他：
+
 - **關掉**：面板右下角的電源鈕，或 `pkill -x AIMeter`。
 - **再打開**：Spotlight 搜「AI Meter」，或 `open ~/Applications/"AI Meter.app"`。
 - ⚠️ 勾了開機啟動又手動結束，**下次登入還是會啟動**。要永久不啟動就先取消勾選再結束。
 
-設定曾經拆成獨立視窗，後來收回面板：這支是 `LSUIElement`，沒有主選單列，
+### 顯示項目是真的停用
+
+關掉一個來源不只是不顯示——**輪詢迴圈會整個被拆掉**，那個來源不會再發任何請求，
+也不會再 fork 任何程序。`make probe` 也會跳過它並印「已停用，略過」，
+這樣 probe 回報的才是 app 實際在做的事。
+
+開關做成選單而不是四個常駐的勾選框，是因為**關掉的來源必須留在那份清單裡**。
+否則關掉之後就從畫面上徹底消失，只能去改 `config.json` 才找得回來。
+全部關掉時面板會直接說明去哪開回來。
+
+停用狀態寫在 `~/.config/ai-meter/config.json`，跟首次啟動的自動偵測結果同一個地方——
+沒裝的來源本來就會是關的，手動關掉只是同一個機制的另一個入口。
+
+### 為什麼設定不獨立成一頁
+
+曾經拆成獨立視窗，後來收回面板：這支是 `LSUIElement`，沒有主選單列，
 ⌘, 沒有東西可以掛，那個視窗得先 `NSApp.activate` 再 `openWindow` 才叫得出來
 （不 activate 會開在別的 app 後面，看起來像沒反應）。
-為三個控制項付這個代價、還多一次點擊，不划算。
+為幾個控制項付這個代價、還多一次點擊，不划算。
 
 ---
 
@@ -40,7 +63,7 @@ extension 跑在沙盒裡，要跟主程式共用資料得靠 App Group entitlem
 |---|---|---|---|
 | Claude Code | `~/Library/Application Support/Claude/plan-usage-history.json` + `~/.claude/rate-limits.json` | 60s | 趨近於零 |
 | Codex | `ChatGPT.app` 內附的 `codex app-server`，JSON-RPC | 15 min | 0.12s CPU、68 MB RSS |
-| OpenRouter | `/credits` + `/keys` × 2 帳號，金鑰讀 `~/dev/llm-ops/.env` | 15 min | 4 個 HTTPS 請求 |
+| OpenRouter | `/credits` + `/analytics/query` + `/keys`，每個帳號一輪 | 15 min | 每帳號 3 個 HTTPS 請求 |
 | Higgsfield | `higgsfield account status --json` | 30 min | 0.04s CPU、42 MB RSS |
 
 ## 耗電
@@ -129,16 +152,19 @@ App 內附一支能用的 Rust binary，講 JSON-RPC over stdio：
 
 ### OpenRouter
 
-`/credits` 給帳號餘額，`/keys` 給每把 key 的上限與用量。點帳號那一列可以展開明細（預設收起）。
+`/credits` 給帳號餘額，`/analytics/query` 給每把 key 的花費，`/keys` 給上限。
+點帳號那一列可以展開明細（預設收起）。
 
 兩個坑：
 
 1. `/credits` 需要 **management key**，一般 inference key 會 403。
-   金鑰沿用 `~/dev/llm-ops/.env` 的 `OPENROUTER_MGMT_A`（個人）與 `_B`（EnGenius）。
+   金鑰位置與帳號清單都在 `~/.config/ai-meter/config.json` 的 `openRouter`——
+   `envFile` 指向一個 `.env`（預設 `~/.config/ai-meter/openrouter.env`），
+   `accounts` 逐一列出 `{label, envKey}`。要幾個帳號就列幾筆。
 2. **OpenRouter 會用 HTTP 200 回傳錯誤**，body 裡放 `{"error": {...}}`。
-   只看 status code 會把錯誤當成功。處理方式對照 `~/dev/llm-ops/scripts/lib/analytics.mjs` 的 `credits()`。
+   只看 status code 會把錯誤當成功。
 
-3. **key 清單與花費要用 analytics，不能用 `/keys`**（llm-ops ADR-0002 就是這樣寫的）。
+3. **key 清單與花費要用 analytics，不能用 `/keys`。**
    `/keys` 只涵蓋 provisioning API 建的金鑰。實測 EnGenius 帳號用 `/keys` 只回一把
    usage $0 的 "Default key"，三把真正在花錢的（都是從網頁後台建的）
    完全看不到；改用 `POST /analytics/query` + `dimensions: ["api_key_id"]` 才全都拿得到，
@@ -184,7 +210,7 @@ make probe
 
 走的是**跟 UI 完全同一份** provider 程式碼。它印出來的對，選單列裡的就對。
 
-四個路徑都能用環境變數覆寫，用來測錯誤路徑而不必動到真的檔案：
+五個路徑都能用環境變數覆寫，用來測錯誤路徑而不必動到真的檔案：
 
 ```bash
 AIMETER_CLAUDE_HISTORY=/tmp/bad.json \
@@ -199,14 +225,23 @@ AIMETER_HIGGSFIELD_BIN=/nonexistent \
 
 ```
 Sources/AIMeter/
-  AIMeterApp.swift    @main，--probe 在這裡分流
+  AIMeterApp.swift       @main，--setup / --probe 在這裡分流
+  Setup.swift            環境偵測、建立設定檔、列出還缺什麼
   Probe.swift            CLI 驗證模式
+  Config.swift           ~/.config/ai-meter/config.json 的讀寫與自動偵測
+  SourceKind.swift       四個來源的識別；「對每個來源做一件事」都走它
   Refresher.swift        各源的更新迴圈、警戒門檻、選單列標題選誰
-  UsageModel.swift       SourceBox / Metric（可巢狀）/ SourceStatus（含 degraded）
+  UsageModel.swift       SourceBox / Metric（可巢狀）/ Brand / SourceStatus
+  MenuBarSelection.swift 選單列顯示哪一源
+  RefreshCadence.swift   省電 / 標準 / 積極 三檔的實際秒數
   LoginItem.swift        LaunchAgent 開機啟動
   Providers/             五個資料源 + .env 解析 + 測試用路徑覆寫
-  UI/                    面板、可展開的列、進度條、選單列標題
+  UI/                    面板、可展開的列、進度條、選單列徽章
 ```
+
+`SourceKind` 值得一提：在它之前，「對每個來源做一件事」都是一條四行的 if 串——
+建輪詢迴圈、收集卡片、手動重整、面板開啟時重抓——每加一個地方就多抄一份，
+而漏掉其中一個**不會有編譯錯誤**。現在那些都是一次 `for kind in SourceKind.allCases`。
 
 沒有 `.xcodeproj` 是刻意的——`swift build` 在 CLI 就跑得動，`.app` 不過是
 一個 Info.plist 加一支執行檔，`scripts/bundle.sh` 幾行就組完。

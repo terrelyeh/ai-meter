@@ -72,10 +72,10 @@ sw_vers -productVersion   # 需要 14 以上
 | 找不到 plan-usage-history.json | Claude 桌面 App 沒開過 | 請使用者開一次 Claude.app |
 | 讀不到鏡射檔 | statusline wrapper 還沒裝，或裝了但還沒有 session 跑過 | 跑 `make setup-statusline`，然後請使用者開一個新的 Claude Code session |
 | `User not found.` | OpenRouter 金鑰錯誤或不是 management key | 跟使用者確認金鑰種類 |
-| 找不到 higgsfield CLI | 沒裝 | `npm i -g @higgsfield/cli`，或在 config 把 `higgsfield.enabled` 設成 false |
+| 找不到 higgsfield CLI | 沒裝 | `npm i -g @higgsfield/cli`，或在面板的「顯示項目」把它關掉 |
 | Higgsfield 服務暫時無回應 | 上游抖動，非認證問題 | 已自動重試 3 次。稍後再跑一次 probe |
 | codex app-server 沒有回應 | ChatGPT App 未登入 | 請使用者開 ChatGPT App 確認登入狀態 |
-| 找不到 ChatGPT.app 裡的 codex | 沒裝 ChatGPT 桌面 App | 在 config 把 `codex.enabled` 設成 false |
+| 找不到 ChatGPT.app 裡的 codex | 沒裝 ChatGPT 桌面 App | 在面板的「顯示項目」把它關掉 |
 
 ## 守則
 
