@@ -129,6 +129,27 @@ AIMETER_HIGGSFIELD_BIN=/tmp/fake ./.build/release/AIMeter --probe
 - **git 歷史含內部命名**：前七個 commit 的原始碼註解裡有三個 EnGenius 內部 key
   名稱。使用者已決定不改寫歷史，知道就好。
 
+## OpenRouter analytics 的查詢窗上限（實測 2026-08-18）
+
+上限**依維度而定**，不是一個固定值：
+
+| 維度 | 上限 | 超過時的錯誤 |
+|---|---|---|
+| `api_key_id`（各金鑰用量） | **367 天** | `time_range exceeds maximum of 367 days` |
+| `external_user`（功能標籤） | **31 天** | `exceeds maximum of 31 days for the requested metrics/dimensions` |
+
+常見的誤解是「analytics 只有 31 天」——那個限制只套在 `external_user` 上。
+本專案查的是 `api_key_id`，所以拿得到一整年。
+
+`fetchUsageByKey` 用 **365 天**，刻意留一點餘裕不去貼 367 的上限。
+
+⚠️ **帳號用超過一年之後會出現一個沉默的偏差**：更早的花費落在查詢窗外，
+各 key 的加總會少於帳號的終身 `total_usage`，差額自動掉進「其他」那一列。
+金額仍然加得起來（所以不會誤導），但那列的文案「已刪除或後台建立的金鑰」
+屆時就不完全準確了。真的發生時改文案即可。
+
+目前這個帳號終身總花費 $31.83、365 天窗合計 $31.84——幾乎完全吻合，還沒到那一天。
+
 ## Common Pitfalls
 
 - **改 `~/.claude/settings.json` 一律走 `scripts/setup-statusline.sh`。**

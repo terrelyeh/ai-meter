@@ -176,6 +176,9 @@ enum OpenRouterSource {
     private static func fetchUsageByKey(key: String) async throws -> [String: Double] {
         // time_range 的參數名不能寫成 start_date / end_date——那樣不會報錯，
         // 會靜默回傳預設區間。也必須是完整 ISO datetime。
+        //
+        // 查詢窗上限依維度而定（實測）：api_key_id 是 367 天，external_user 只有 31 天。
+        // 常見誤解是「analytics 只有 31 天」，那個限制不套在這裡。365 是刻意留餘裕。
         let end = Date()
         let start = end.addingTimeInterval(-365 * 24 * 3600)
         let formatter = ISO8601DateFormatter()
