@@ -156,6 +156,7 @@ struct SourceCard: View {
     var emphasis: CardEmphasis = .panel
     /// 展開狀態留在 UI 這層，重新整理資料不會把使用者展開的東西收回去。
     @State private var expanded: Set<String> = []
+    @State private var isHovered = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 9) {
@@ -168,19 +169,34 @@ struct SourceCard: View {
         .background(
             RoundedRectangle(cornerRadius: 9, style: .continuous)
                 .fill(emphasis.fill)
-                .shadow(color: .black.opacity(emphasis.shadow), radius: 4, y: 1)
+                // 滑過時底色再疊薄薄一層，讓「現在在看哪一張」有回應。
+                .overlay(
+                    RoundedRectangle(cornerRadius: 9, style: .continuous)
+                        .fill(Color.primary.opacity(isHovered ? 0.05 : 0))
+                )
+                .shadow(
+                    color: .black.opacity(emphasis.shadow),
+                    radius: isHovered ? 7 : 4,
+                    y: isHovered ? 2 : 1
+                )
         )
         .overlay(
             // 平時用中性邊框：拿識別色當邊框的話，OpenRouter 那張近黑色的卡
             // 邊框會直接消失，四張卡看起來不成套。警戒時才換成識別色。
+            // 滑過時改用識別色，順便強化「這張是誰」。
             RoundedRectangle(cornerRadius: 9, style: .continuous)
-                .strokeBorder(
-                    box.alert > .normal
-                        ? box.accent.opacity(0.6)
-                        : Color.primary.opacity(emphasis.border),
-                    lineWidth: 1
-                )
+                .strokeBorder(borderColor, lineWidth: 1)
         )
+        // 位移只有 1pt：常駐工具的動效要克制，做大了每次滑過都在跳。
+        .offset(y: isHovered ? -1 : 0)
+        .animation(.easeOut(duration: 0.14), value: isHovered)
+        .onHover { isHovered = $0 }
+    }
+
+    private var borderColor: Color {
+        if box.alert > .normal { return box.accent.opacity(0.6) }
+        if isHovered { return box.accent.opacity(0.45) }
+        return Color.primary.opacity(emphasis.border)
     }
 
     // MARK: 標題列

@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 extension AlertLevel {
@@ -37,6 +38,8 @@ struct MetricRow: View {
     var accent: Color = .accentColor
     var onToggle: (() -> Void)?
 
+    @State private var isHovered = false
+
     private var expandable: Bool { !metric.children.isEmpty }
     private var isGroup: Bool { metric.style == .group }
 
@@ -53,8 +56,8 @@ struct MetricRow: View {
     private var grouped: some View {
         HStack(alignment: .top, spacing: 0) {
             Rectangle()
-                .fill(accent.opacity(0.55))
-                .frame(width: 2.5)
+                .fill(accent.opacity(isHovered ? 0.9 : 0.55))
+                .frame(width: isHovered ? 3.5 : 2.5)
             plain
                 .padding(.leading, 8)
                 .padding(.trailing, 8)
@@ -62,9 +65,10 @@ struct MetricRow: View {
         }
         .background(
             RoundedRectangle(cornerRadius: 6, style: .continuous)
-                .fill(Color.primary.opacity(0.05))
+                .fill(Color.primary.opacity(isHovered ? 0.09 : 0.05))
         )
         .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+        .animation(.easeOut(duration: 0.12), value: isHovered)
     }
 
     private var plain: some View {
@@ -98,7 +102,7 @@ struct MetricRow: View {
             if expandable {
                 Image(systemName: "chevron.right")
                     .font(.system(size: 8, weight: .bold))
-                    .foregroundStyle(.tertiary)
+                    .foregroundStyle(isHovered ? AnyShapeStyle(accent) : AnyShapeStyle(.tertiary))
                     .rotationEffect(.degrees(isExpanded ? 90 : 0))
                     .frame(width: 8)
             }
@@ -115,5 +119,12 @@ struct MetricRow: View {
         }
         .contentShape(Rectangle())
         .onTapGesture { if expandable { onToggle?() } }
+        // 只有可展開的列才給回饋——不能點的東西給了 hover 效果只會誤導。
+        .onHover { hovering in
+            guard expandable else { return }
+            isHovered = hovering
+            // 游標換成手指，是「這裡可以點」最直接的訊號。
+            hovering ? NSCursor.pointingHand.push() : NSCursor.pop()
+        }
     }
 }
