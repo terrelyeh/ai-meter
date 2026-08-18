@@ -1,7 +1,10 @@
 # AI Meter — 安裝 runbook
 
 macOS 選單列工具，顯示 Claude Code / Codex / OpenRouter / Higgsfield 的剩餘額度。
-本檔是**給 agent 執行的安裝流程**。設計理由與踩過的坑在 `README.md`。
+本檔是**給 agent 執行的安裝流程**。
+
+- 設計理由與各 API 踩過的坑 → [README.md](README.md)
+- 要**修改這支程式**而不是安裝它 → [CLAUDE.md](CLAUDE.md)
 
 使用者只要裝他自己有在用的服務。沒偵測到的來源會自動停用，不會留下錯誤訊息。
 
