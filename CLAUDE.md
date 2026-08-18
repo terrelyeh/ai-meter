@@ -152,6 +152,13 @@ AIMETER_HIGGSFIELD_BIN=/tmp/fake ./.build/release/AIMeter --probe
 
 ## Common Pitfalls
 
+- **statusline payload 的型別會變，不要用嚴格 decode 去接。** 實測
+  `used_percentage` 從整數變成 `28.999999999999996`；原本宣告成 `Int` 導致整份
+  鏡射檔解析失敗，重置倒數變成**時有時無**（值剛好是整數時才出現）。
+  `ClaudeRateLimitMirror.Window` 現在逐欄位自己解，任何一欄型別不如預期只會讓
+  那一欄變 nil。**接任何沒有相容性承諾的外部 payload 都該這樣做**——
+  一個根本用不到的欄位不該有能力搞垮整份資料。
+
 - **改 `~/.claude/settings.json` 一律走 `scripts/setup-statusline.sh`。**
   它會備份、比對新舊輸出一致才套用、不一致自動回滾。手動改壞了使用者的
   statusline 會整條消失，而他只會覺得 Claude Code 壞了。

@@ -9,7 +9,7 @@ import Foundation
 /// 讀不到不是錯誤——只是還沒有任何 Claude Code session 跑過 statusline。
 /// 那種情況下百分比照顯示，只是沒有倒數。
 struct RateLimitWindow {
-    var usedPercentage: Int?
+    var usedPercentage: Double?
     var resetsAt: Date?
 
     /// 已經過了重置時間就別再倒數——顯示一個負的或停住的時間比不顯示更糟。
@@ -33,11 +33,27 @@ enum ClaudeRateLimitMirror {
                 .appending(path: ".claude/rate-limits.json")
     }
 
-    /// resets_at 的型別沒有文件保證：statusline 腳本把它當 epoch 秒數在算，
-    /// 但 payload 也可能是 ISO 字串。兩種都接，猜錯不會讓整格壞掉。
+    /// 這份 payload 的型別沒有任何文件保證，而且**實測會變**：
+    /// used_percentage 曾經是整數，後來出現 28.999999999999996 這種小數。
+    /// 宣告成 Int 的話整份解析會失敗，倒數就時有時無（值剛好是整數時才出現）。
+    ///
+    /// 所以：數字一律用 Double 接；resets_at 兩種格式都接
+    /// （statusline 腳本把它當 epoch 秒數算，但也可能是 ISO 字串）。
     private struct Window: Decodable {
-        var used_percentage: Int?
+        var used_percentage: Double?
         var resets_at: FlexibleDate?
+
+        /// 逐欄位自己解，任何一欄的型別不如預期都只讓那一欄變成 nil，
+        /// 不會拖垮整個 Window——我們真正需要的其實只有 resets_at。
+        init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            used_percentage = try? container.decodeIfPresent(Double.self, forKey: .used_percentage)
+            resets_at = try? container.decodeIfPresent(FlexibleDate.self, forKey: .resets_at)
+        }
+
+        private enum CodingKeys: String, CodingKey {
+            case used_percentage, resets_at
+        }
     }
 
     private struct Payload: Decodable {
