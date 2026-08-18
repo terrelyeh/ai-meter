@@ -86,6 +86,12 @@ final class Refresher {
 
     private let desktopPanel = DesktopPanelWindow()
 
+    /// 選單列項目的寬度樣式。選單列塞不下時，排在後面的項目會直接不被畫出來，
+    /// 所以要讓使用者能自己把它縮窄。
+    var menuBarStyle: MenuBarStyle = MenuBarStyle.stored {
+        didSet { MenuBarStyle.stored = menuBarStyle }
+    }
+
     /// 選單列要顯示誰。改了就記住，重開 app 還在。
     var selection: MenuBarSelection = MenuBarSelection.stored {
         didSet { MenuBarSelection.stored = selection }

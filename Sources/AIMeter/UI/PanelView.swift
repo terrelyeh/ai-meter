@@ -87,6 +87,16 @@ struct PanelView: View {
                 .pickerStyle(.inline)
             }
 
+            Section("選單列樣式") {
+                Picker("", selection: $refresher.menuBarStyle) {
+                    ForEach(MenuBarStyle.allCases) { option in
+                        Text(option.title).tag(option)
+                    }
+                }
+                .labelsHidden()
+                .pickerStyle(.inline)
+            }
+
             Section("更新頻率") {
                 Picker("", selection: $refresher.cadence) {
                     ForEach(RefreshCadence.allCases) { option in

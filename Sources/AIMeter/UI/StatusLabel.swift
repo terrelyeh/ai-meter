@@ -4,6 +4,7 @@ import SwiftUI
 /// 選單列上那一小塊。空間只夠放一個數字，所以放「現在最該知道的那一個」。
 struct StatusLabel: View {
     var headline: Refresher.Headline
+    var style: MenuBarStyle = .badgeAndValue
 
     var body: some View {
         // spacing 設 0：選單列不見得會照 HStack 的 spacing 排，
@@ -15,10 +16,14 @@ struct StatusLabel: View {
             // 之前警戒時會把圖示換成驚嘆號三角形，但那讓「我明明選了 Codex，
             // 卻看到一個三角形」——使用者是刻意釘住某一源的，換掉圖示等於
             // 把他的選擇蓋掉。而且嚴重程度本來就寫在旁邊的百分比裡了。
-            Image(nsImage: MenuBarBadge.image(for: headline))
+            if style.showsBadge {
+                Image(nsImage: MenuBarBadge.image(for: headline, gap: style.gap))
+            }
 
-            Text(headline.text)
-                .monospacedDigit()
+            if style.showsValue {
+                Text(headline.text)
+                    .monospacedDigit()
+            }
 
             // 只有「別的來源」出事才加記號——那是畫面上看不到的資訊，
             // 不標出來就等於藏起來。自己這一源的狀態看數字就知道。
@@ -38,18 +43,19 @@ struct StatusLabel: View {
 enum MenuBarBadge {
     private static var cache: [String: NSImage] = [:]
 
-    static func image(for headline: Refresher.Headline) -> NSImage {
-        if let hit = cache[headline.symbol] { return hit }
-        let rendered = render(headline)
-        cache[headline.symbol] = rendered
+    static func image(for headline: Refresher.Headline, gap: Double) -> NSImage {
+        // 右側留白算在圖裡，所以它是快取鍵的一部分。
+        let key = "\(headline.symbol)|\(gap)"
+        if let hit = cache[key] { return hit }
+        let rendered = render(headline, gap: gap)
+        cache[key] = rendered
         return rendered
     }
 
-    private static func render(_ headline: Refresher.Headline) -> NSImage {
+    private static func render(_ headline: Refresher.Headline, gap: Double) -> NSImage {
         // 選單列高度約 22pt，18 是不會被系統縮放又看得清楚的上限附近。
         let side: CGFloat = 18
-        // 徽章右側的留白，直接算進圖裡。
-        let gap: CGFloat = 7
+
 
         let badge = RoundedRectangle(cornerRadius: 4.5, style: .continuous)
             .fill(headline.brand.color)
@@ -65,7 +71,7 @@ enum MenuBarBadge {
                 RoundedRectangle(cornerRadius: 4.5, style: .continuous)
                     .strokeBorder(Color.white.opacity(0.3), lineWidth: 0.5)
             )
-            .padding(.trailing, gap)
+            .padding(.trailing, CGFloat(gap))
 
         let renderer = ImageRenderer(content: badge)
         renderer.scale = 2                       // 視網膜螢幕不要糊掉

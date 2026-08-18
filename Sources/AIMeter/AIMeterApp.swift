@@ -20,7 +20,7 @@ struct AIMeterApp: App {
         MenuBarExtra {
             PanelView(refresher: refresher)
         } label: {
-            StatusLabel(headline: refresher.headline)
+            StatusLabel(headline: refresher.headline, style: refresher.menuBarStyle)
                 .task { refresher.start() }
         }
         .menuBarExtraStyle(.window)
