@@ -30,6 +30,10 @@ struct Metric: Identifiable {
     /// 全部串成一行字的話層級就沒了。
     var detail: String?
     var value: String
+    /// 進度條要填多少（0…1），語意固定是**已用的比例**。
+    ///
+    /// 注意它跟 `value` 刻意不同向：value 講剩餘、fraction 講已用。
+    /// 條「填滿 = 逼近極限」是通用讀法，短條反而像是還沒用多少。
     var fraction: Double?
     var alert: AlertLevel = .normal
     var children: [Metric] = []

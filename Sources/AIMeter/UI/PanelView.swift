@@ -285,8 +285,9 @@ struct SourceCard: View {
         }
     }
 
+    // 列距要拉得比列內間距大，群組才分得開（見 MetricRow.plain 的說明）。
     private var metricList: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 12) {
             ForEach(box.metrics) { metric in
                 MetricRow(
                     metric: metric,

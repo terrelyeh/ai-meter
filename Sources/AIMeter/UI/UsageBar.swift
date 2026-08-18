@@ -71,8 +71,10 @@ struct MetricRow: View {
         .animation(.easeOut(duration: 0.12), value: isHovered)
     }
 
+    // 一列自己內部的間距（標題 → 說明 → 進度條）必須明顯小於「列與列」之間的間距，
+    // 否則「未設上限」這種小字看起來會像是屬於下一列的。
     private var plain: some View {
-        VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: 3) {
             header
             if let detail = metric.detail {
                 Text(detail)
@@ -86,7 +88,7 @@ struct MetricRow: View {
                     .padding(.leading, expandable ? 12 : 0)
             }
             if expandable && isExpanded {
-                VStack(alignment: .leading, spacing: 7) {
+                VStack(alignment: .leading, spacing: 12) {
                     ForEach(metric.children) { child in
                         MetricRow(metric: child)
                     }

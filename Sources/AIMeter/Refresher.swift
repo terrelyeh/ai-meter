@@ -194,21 +194,17 @@ final class Refresher {
             let mirror = ClaudeRateLimitMirror.read()
 
             var metrics = [
-                Metric(
-                    id: "fh",
-                    label: "5 小時窗",
+                Self.remainingMetric(
+                    id: "fh", label: "5 小時窗",
+                    usedPercent: Double(usage.fiveHour),
                     detail: Self.resetDetail(mirror?.fiveHour.timeUntilReset),
-                    value: "\(usage.fiveHour)%",
-                    fraction: Double(usage.fiveHour) / 100,
-                    alert: level(percent: usage.fiveHour, warning: 60, critical: 80)
+                    warning: 40, critical: 20
                 ),
-                Metric(
-                    id: "sd",
-                    label: "7 天",
+                Self.remainingMetric(
+                    id: "sd", label: "7 天",
+                    usedPercent: Double(usage.sevenDay),
                     detail: Self.resetDetail(mirror?.sevenDay.timeUntilReset),
-                    value: "\(usage.sevenDay)%",
-                    fraction: Double(usage.sevenDay) / 100,
-                    alert: level(percent: usage.sevenDay, warning: 70, critical: 90)
+                    warning: 30, critical: 10
                 ),
             ]
             if let extra = usage.extraUsage, extra > 0 {
@@ -216,7 +212,7 @@ final class Refresher {
                     Metric(
                         id: "xu",
                         label: "超額",
-                        value: "\(extra)%",
+                        value: "已用 \(extra)%",     // 超額沒有「剩餘」可言
                         fraction: Double(extra) / 100,
                         alert: .warning
                     )
@@ -235,13 +231,11 @@ final class Refresher {
         do {
             let status = try await CodexSource.fetch()
             let metrics = status.windows.map { window in
-                Metric(
-                    id: window.id,
-                    label: window.label,
+                Self.remainingMetric(
+                    id: window.id, label: window.label,
+                    usedPercent: window.usedPercent,
                     detail: Self.resetDetail(window.timeUntilReset),
-                    value: "\(Int(window.usedPercent.rounded()))%",
-                    fraction: window.usedPercent / 100,
-                    alert: level(percent: Int(window.usedPercent.rounded()), warning: 70, critical: 90)
+                    warning: 30, critical: 10
                 )
             }
             // 方案名稱（prolite 之類）不顯示：它從來不會變，佔一行卻不帶任何決策資訊。
@@ -315,19 +309,21 @@ final class Refresher {
 
     /// 每把 key 的用量對照它自己設的上限。
     ///
-    /// 最後那列「未歸戶」是刻意的：/keys 看不到從網頁後台建的金鑰，
-    /// 少了那一列的話，帳號明細會加總不到帳號實際花掉的錢，而且不會有任何提示。
+    /// 最後那列「其他」是刻意的：已刪除的金鑰、以及 /keys 看不到的後台金鑰，
+    /// 它們的花費都落在這裡。少了那一列，帳號明細會加總不到實際花掉的錢，
+    /// 而且不會有任何提示。
     private func keyBreakdown(for balance: OpenRouterBalance) -> [Metric] {
         var rows = balance.keys.map { key -> Metric in
             if let limit = key.limit, limit > 0 {
                 let remaining = key.limitRemaining ?? (limit - key.usage)
+                let remainingFraction = max(0, remaining / limit)
                 return Metric(
                     id: "\(balance.label)/\(key.name)",
                     label: key.name,
-                    detail: "上限 \(Self.money(limit))，已用 \(Self.money(key.usage))",
-                    value: "剩 \(Self.money(remaining))",
-                    fraction: key.usage / limit,
-                    alert: level(fraction: key.usage / limit, warning: 0.75, critical: 0.9)
+                    detail: "已用 \(Self.money(key.usage))",
+                    value: "\(Self.money(remaining)) / \(Self.money(limit))",
+                    fraction: min(1, max(0, key.usage / limit)),   // 條畫已用，數字講剩餘
+                    alert: level(remaining: remainingFraction, warning: 0.25, critical: 0.10)
                 )
             }
             return Metric(
@@ -345,7 +341,8 @@ final class Refresher {
             rows.append(
                 Metric(
                     id: "\(balance.label)/unattributed",
-                    label: "未歸戶（後台建的 key）",
+                    label: "其他",
+                    detail: "已刪除或後台建立的金鑰",
                     value: "已用 \(Self.money(unattributed))",
                     fraction: nil
                 )
@@ -422,18 +419,39 @@ final class Refresher {
             ?? Headline(symbol: "gauge.with.needle", brand: Brand(0.5, 0.5, 0.52), text: "—", alert: .normal)
     }
 
-    // MARK: 小工具
-
-    private func level(percent: Int, warning: Int, critical: Int) -> AlertLevel {
-        percent >= critical ? .critical : (percent >= warning ? .warning : .normal)
+    /// 數字講**剩餘**，進度條講**已用**——兩者刻意不同步。
+    ///
+    /// 數字用剩餘：使用者的 Claude Code statusline 顯示的就是剩餘（那支腳本算 100 - used），
+    /// 兩邊講同一件事卻反過來的話，每次對照都要心算。
+    ///
+    /// 條用已用：「條很短」直覺上像「還沒用多少」，要多想一秒才會意識到是快用完了。
+    /// 填滿才是逼近極限，那是通用的閱讀方式。macOS 自己的儲存空間指示器正是這個組合——
+    /// 條隨已使用量填滿，旁邊的文字寫「可用 86 GB」。
+    ///
+    /// 文字上：無標示 = 剩餘；只有「沒有剩餘可言」的東西（超額、沒設上限的 key）才標「已用」。
+    nonisolated static func remainingMetric(
+        id: String,
+        label: String,
+        usedPercent: Double,
+        detail: String?,
+        warning: Double,
+        critical: Double
+    ) -> Metric {
+        let remaining = max(0, 100 - usedPercent)
+        return Metric(
+            id: id,
+            label: label,
+            detail: detail,
+            value: "\(Int(remaining.rounded()))%",
+            fraction: min(1, max(0, usedPercent / 100)),   // 條畫已用
+            alert: remaining <= critical ? .critical : (remaining <= warning ? .warning : .normal)
+        )
     }
+
+    // MARK: 小工具
 
     private func level(remaining: Double, warning: Double, critical: Double) -> AlertLevel {
         remaining < critical ? .critical : (remaining < warning ? .warning : .normal)
-    }
-
-    private func level(fraction: Double, warning: Double, critical: Double) -> AlertLevel {
-        fraction >= critical ? .critical : (fraction >= warning ? .warning : .normal)
     }
 
     /// 「2h14m 後重置」。拿不到重置時間就沒有這一行。

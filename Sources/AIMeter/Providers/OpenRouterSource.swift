@@ -16,10 +16,11 @@ struct OpenRouterBalance {
 
     var remaining: Double { totalCredits - totalUsage }
 
-    /// 帳號總花費減掉看得到的 key 花費。
+    /// 帳號總花費減掉列出來的 key 花費。
     ///
-    /// `/keys` 只涵蓋透過 provisioning API 建立的金鑰，從網頁後台建的永遠不會出現。
-    /// 差額如果不顯示出來，帳號的明細會看起來比實際少花很多錢。
+    /// 差額有兩個來源：已經刪掉的金鑰（花費留在歷史裡，但 key 不該再顯示成現存的），
+    /// 以及從網頁後台建、`/keys` 看不到的金鑰。
+    /// 不顯示這個差額的話，帳號明細會看起來比實際少花很多錢。
     var unattributedUsage: Double {
         max(0, totalUsage - keys.reduce(0) { $0 + $1.usage })
     }
@@ -147,8 +148,17 @@ enum OpenRouterSource {
         // 上限拿不到只是少了進度條，不該讓整份明細消失。
         let limits = (try? await limitRows) ?? [:]
 
-        // 聯集：有花費的（analytics）＋ 有設上限但還沒花錢的（/keys）都該出現。
-        let names = Set(usage.keys).union(limits.keys)
+        // 哪些 key 該出現？兩邊都不完美：
+        //   /keys      只看得到 provisioning API 建的，但它是唯一知道「現在還在不在」的來源
+        //   analytics  看得到全部有花費的，但**刪掉的 key 其歷史花費會一直留著**
+        //
+        // 規則：/keys 有回東西時就以它為準（刪掉的 key 自然消失）；
+        // 回空的時候代表這個帳號的金鑰它全看不到，才退回 analytics 的清單。
+        // 兩種情況實測都有：一個帳號 /keys 回 4 把（刪掉的那把已不在），
+        // 另一個帳號 /keys 回空、三把在花錢的全靠 analytics 才看得到。
+        //
+        // 被濾掉的花費不會憑空消失——它會落到下面的「其他」那一列。
+        let names = limits.isEmpty ? Set(usage.keys) : Set(limits.keys)
 
         return names
             .map { name in

@@ -44,7 +44,9 @@ enum Probe {
             let usage = try ClaudeCodeSource.read()
             // 只在真的超額時才提。印 "超額 0%" 會讓人以為出事了。
             let extra = (usage.extraUsage ?? 0) > 0 ? "  ·  超額 \(usage.extraUsage!)%" : ""
-            ok("5 小時窗 \(usage.fiveHour)%  ·  7 天 \(usage.sevenDay)%" + extra)
+            // 兩個都印：面板顯示剩餘，原始資料是已用，對照時兩邊都要看得到。
+            ok("5 小時窗 剩 \(100 - usage.fiveHour)%（已用 \(usage.fiveHour)%）"
+                + "  ·  7 天 剩 \(100 - usage.sevenDay)%（已用 \(usage.sevenDay)%）" + extra)
             let age = Int(usage.age / 60)
             let verdict = usage.isStale ? "⚠️ 已過期，Claude.app 可能沒在跑" : "新鮮"
             ok("樣本時間 \(usage.sampledAt.formatted(date: .omitted, time: .standard))（\(age) 分鐘前，\(verdict)）")
@@ -81,8 +83,9 @@ enum Probe {
             let status = try await CodexSource.fetch()
             for window in status.windows {
                 let countdown = window.timeUntilReset.map { "\(Refresher.countdown($0)) 後重置" } ?? "重置時間未知"
-                ok(String(format: "%@（%d 分鐘窗）用掉 %.0f%%  ·  %@",
-                          window.label, window.windowMinutes, window.usedPercent, countdown))
+                ok(String(format: "%@（%d 分鐘窗）剩 %.0f%%（已用 %.0f%%）  ·  %@",
+                          window.label, window.windowMinutes,
+                          max(0, 100 - window.usedPercent), window.usedPercent, countdown))
             }
             ok("方案 \(status.planType ?? "未知")"
                 + (status.hasCredits ? "  ·  credits \(status.creditBalance ?? "?")" : "  ·  無額外 credits"))
@@ -105,14 +108,14 @@ enum Probe {
                 for key in balance.keys {
                     if let limit = key.limit, limit > 0 {
                         let remaining = key.limitRemaining ?? (limit - key.usage)
-                        print(String(format: "      · %@  剩 $%.2f / $%.2f（用掉 %.0f%%）",
-                                     key.name, remaining, limit, key.usage / limit * 100))
+                        print(String(format: "      · %@  $%.2f / $%.2f（已用 $%.2f）",
+                                     key.name, remaining, limit, key.usage))
                     } else {
                         print(String(format: "      · %@  已用 $%.2f（未設上限）", key.name, key.usage))
                     }
                 }
                 if balance.unattributedUsage > 0.01 {
-                    print(String(format: "      · 未歸戶（後台建的 key）已用 $%.2f",
+                    print(String(format: "      · 其他（已刪除或後台建立的金鑰）已用 $%.2f",
                                  balance.unattributedUsage))
                 }
             case .failure(let error):
