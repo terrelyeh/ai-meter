@@ -56,12 +56,19 @@ enum CodexSource {
     enum Failure: LocalizedError {
         case notInstalled
         case noResponse
+        /// 收到回應了，但裡面還沒有額度資料。
+        ///
+        /// app-server 剛啟動時帳號狀態不見得已經載好，這時查詢會回一個空的 result。
+        /// 這跟「認證壞掉」完全是兩回事——混在一起的話，使用者會為了一個
+        /// 幾秒後自己就好的狀況跑去重新登入。
+        case notReady
         case badOutput
 
         var errorDescription: String? {
             switch self {
             case .notInstalled: return "找不到 ChatGPT.app 裡的 codex"
             case .noResponse: return "codex app-server 沒有回應"
+            case .notReady: return "codex 還沒回報額度資料"
             case .badOutput: return "codex 回應格式不符預期"
             }
         }
@@ -69,13 +76,17 @@ enum CodexSource {
         var hint: String? {
             switch self {
             case .notInstalled: return "需要安裝 ChatGPT 桌面 App"
-            case .noResponse, .badOutput: return "ChatGPT App 可能需要重新登入"
+            // 這兩種自己會好，不要叫人去做任何事。
+            case .noResponse, .notReady: return nil
+            case .badOutput: return "ChatGPT App 可能需要重新登入"
             }
         }
 
         var isTransient: Bool {
-            if case .noResponse = self { return true }
-            return false
+            switch self {
+            case .noResponse, .notReady: return true
+            case .notInstalled, .badOutput: return false
+            }
         }
     }
 
@@ -104,13 +115,29 @@ enum CodexSource {
         var result: Result?
     }
 
-    static func fetch() async throws -> CodexStatus {
+    /// app-server 剛起來時帳號狀態可能還沒載好，回一個空的 result。
+    /// 實測是間歇性的：手動測試（在 initialize 之後停一下再查）幾乎都成功，
+    /// 程式一收到 initialize 回應就立刻查則偶爾撲空。所以重試而不是直接報錯。
+    static func fetch(attempts: Int = 3) async throws -> CodexStatus {
+        var lastError: Error = Failure.notReady
+        for attempt in 1...max(attempts, 1) {
+            do {
+                return try once()
+            } catch let error as Failure where error.isTransient {
+                lastError = error
+                if attempt < attempts { try? await Task.sleep(for: .milliseconds(1500)) }
+            }
+        }
+        throw lastError
+    }
+
+    private static func once() throws -> CodexStatus {
         guard let executable = candidatePaths.first(where: { FileManager.default.isExecutableFile(atPath: $0) }) else {
             throw Failure.notInstalled
         }
         let payload = try query(executable: executable)
 
-        guard let limits = payload.result?.rateLimits else { throw Failure.badOutput }
+        guard let limits = payload.result?.rateLimits else { throw Failure.notReady }
 
         let windows = [limits.primary, limits.secondary]
             .compactMap { $0 }
@@ -122,7 +149,8 @@ enum CodexSource {
                     resetsAt: window.resetsAt.map { Date(timeIntervalSince1970: $0) }
                 )
             }
-        guard !windows.isEmpty else { throw Failure.badOutput }
+        // 有 result 卻沒有任何視窗，同樣是「還沒準備好」而不是壞掉。
+        guard !windows.isEmpty else { throw Failure.notReady }
 
         return CodexStatus(
             windows: windows,
@@ -165,10 +193,23 @@ enum CodexSource {
         guard awaitResponse(id: 0, from: &reader) != nil else { throw Failure.noResponse }
 
         writer.write(Data((Request.initialized + "\n").utf8))
-        writer.write(Data((Request.rateLimits(method: readOnlyMethod) + "\n").utf8))
-        guard let response = awaitResponse(id: 1, from: &reader) else { throw Failure.noResponse }
 
-        return response
+        // 同一條連線裡重問，而不是失敗就整支程序重開——重開要再付一次
+        // 219 MB binary 的啟動成本，而這裡等的只是伺服器把帳號狀態載好。
+        var lastSeen: Response?
+        for attempt in 0..<3 {
+            let id = 1 + attempt
+            writer.write(Data((Request.rateLimits(id: id, method: readOnlyMethod) + "\n").utf8))
+
+            guard let response = awaitResponse(id: id, from: &reader) else {
+                throw lastSeen == nil ? Failure.noResponse : Failure.notReady
+            }
+            if response.result?.rateLimits != nil { return response }
+
+            lastSeen = response
+            Thread.sleep(forTimeInterval: 0.8)
+        }
+        return lastSeen ?? Response(id: 1, result: nil)
     }
 
     /// 一直讀到指定 id 的回應為止。中間會夾雜 remoteControl/status/changed 之類的
@@ -206,8 +247,8 @@ enum CodexSource {
             #"{"jsonrpc":"2.0","id":0,"method":"initialize","params":{"clientInfo":{"name":"aimeter","title":"AI Meter","version":"1.0"}}}"#
         static let initialized =
             #"{"jsonrpc":"2.0","method":"initialized","params":{}}"#
-        static func rateLimits(method: String) -> String {
-            #"{"jsonrpc":"2.0","id":1,"method":"\#(method)","params":{}}"#
+        static func rateLimits(id: Int, method: String) -> String {
+            #"{"jsonrpc":"2.0","id":\#(id),"method":"\#(method)","params":{}}"#
         }
     }
 }
