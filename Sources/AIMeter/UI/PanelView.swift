@@ -7,9 +7,17 @@ struct PanelView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
+            // 工具列放在最上面，是為了齒輪選單的展開空間。
+            //
+            // 原本在底部：面板本身就有四張卡（約 500pt），齒輪的位置已經很低，
+            // 再往下展開一個二十列的選單就會被螢幕下緣切掉。選單的彈出位置沒辦法
+            // 從 SwiftUI 控制，但錨點可以——移到頂端就有整個螢幕高度可以展開。
+            toolbar
+            Divider().padding(.bottom, 2)
+
             if refresher.boxes.isEmpty {
                 // 全關掉時面板會空無一物，得告訴使用者東西在哪、怎麼開回來。
-                Text("目前沒有啟用任何來源。\n點下方的齒輪 → 顯示項目，把要看的打開。")
+                Text("目前沒有啟用任何來源。\n點上方的齒輪 → 顯示項目，把要看的打開。")
                     .font(.system(size: 11))
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -19,9 +27,6 @@ struct PanelView: View {
                     SourceCard(box: box)
                 }
             }
-
-            Divider().padding(.top, 4)
-            footer
         }
         .padding(12)
         .frame(width: 328)
@@ -29,14 +34,14 @@ struct PanelView: View {
         .onAppear { refresher.panelDidOpen() }
     }
 
-    /// 設定全部收進齒輪選單，面板底部只留一列。
+    /// 設定全部收進齒輪選單，面板只留一列工具列。
     ///
-    /// 五個控制項常駐時，設定區的份量幾乎跟上面四張資料卡一樣重——但這些設定
+    /// 五個控制項常駐時，設定區的份量幾乎跟四張資料卡一樣重——但這些設定
     /// 你幾乎不會動。真正值得一直看得到的只有「重新整理」。
     ///
     /// 用**選單**而不是獨立視窗：選單就地彈出，不用開視窗、不用 NSApp.activate，
     /// 也不會多一個要維護的 scene。之前那個設定視窗被拿掉正是因為那些代價。
-    private var footer: some View {
+    private var toolbar: some View {
         HStack(spacing: 10) {
             Button {
                 refresher.refreshNow()

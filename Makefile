@@ -40,7 +40,7 @@ install: bundle
 	@cp -R "build/$(APP_NAME).app" "$(INSTALL_DIR)/"
 	@open "$(INSTALL_DIR)/$(APP_NAME).app"
 	@echo "裝到 $(INSTALL_DIR)/$(APP_NAME).app"
-	@echo "設定在面板底部的齒輪選單裡"
+	@echo "設定在面板上方的齒輪選單裡"
 
 uninstall:
 	@pkill -x AIMeter 2>/dev/null || true
