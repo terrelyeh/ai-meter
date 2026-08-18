@@ -238,11 +238,10 @@ final class Refresher {
                     alert: level(percent: Int(window.usedPercent.rounded()), warning: 70, critical: 90)
                 )
             }
-            var note = status.planType.map { "\($0) 方案" }
-            // 只在真的有 credit 餘額時才提，不然 "0" 會被誤讀成「額度用光了」。
-            if status.hasCredits, let balance = status.creditBalance {
-                note = [note, "credits \(balance)"].compactMap { $0 }.joined(separator: " · ")
-            }
+            // 方案名稱（prolite 之類）不顯示：它從來不會變，佔一行卻不帶任何決策資訊。
+            // 只有真的有 credit 餘額時才值得補一行——而且 hasCredits 為假時不能印 "0"，
+            // 那會被誤讀成「額度用光了」。
+            let note = (status.hasCredits ? status.creditBalance.map { "credits \($0)" } : nil)
             codex.succeeded(metrics: metrics, note: note)
         } catch {
             codex.failed(error)
@@ -286,8 +285,9 @@ final class Refresher {
             }
         }
 
-        let spent = successes.reduce(0) { $0 + $1.totalUsage }
-        openRouter.succeeded(metrics: metrics, note: "累計已用 \(Self.money(spent))")
+        // 不再顯示跨帳號的累計已用：每個帳號那一列的說明本來就寫著各自的
+        // 「額度 $X，已用 $Y」，再加一行總和是重複資訊。
+        openRouter.succeeded(metrics: metrics, note: nil)
     }
 
     private func refreshHiggsfield() async {
